@@ -203,6 +203,29 @@ This installs the `career-ops` binary globally so you can run it directly instea
 
 See [docs/SETUP.md](docs/SETUP.md) for the full setup guide, [docs/RUNNING_ON_A_BUDGET.md](docs/RUNNING_ON_A_BUDGET.md) for instructions on running career-ops cheaply using custom or local models, [docs/AUTOMATION.md](docs/AUTOMATION.md) for scheduling recurring scans and a zero-token triage-to-shortlist recipe, [docs/APPLY_AUTOFILL.md](docs/APPLY_AUTOFILL.md) for details on the ATS auto-fill flow, and [docs/FAQ.md](docs/FAQ.md) for answers to common setup questions. Design principles live in [ARCHITECTURE.md](ARCHITECTURE.md); runtime flows in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## Hermes Agent Integration
+
+This fork includes a tested Hermes launcher while preserving `santifer/career-ops` as the canonical upstream update source.
+
+```bash
+# Interactive session from the repository root
+npm run hermes
+
+# One-shot task
+npm run hermes -- chat -q "Run career-ops scan mode"
+```
+
+Hermes loads `AGENTS.md` from the repository root. Candidate facts remain in Git-ignored user files such as `cv.md`, `config/profile.yml`, `modes/_profile.md`, and `article-digest.md`; Hermes memory is not an application-fact source.
+
+To refresh the private evidence digest from a compatible public portfolio catalog:
+
+```bash
+npm run portfolio:sync -- --input /path/to/portfolio/content/projects.json
+npm run portfolio:sync -- --input /path/to/portfolio/content/projects.json --check
+```
+
+The synchronizer validates explicit descriptions, contributions, stacks, status, and HTTPS source/live links, then atomically writes only the Git-ignored `article-digest.md`.
+
 ## Antigravity CLI Integration
 
 career-ops supports Antigravity CLI natively, the same way it supports Claude Code and OpenCode. All slash commands are available through the shared skill entrypoint, using the same `modes/*.md` evaluation logic.

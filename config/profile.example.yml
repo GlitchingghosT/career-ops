@@ -73,18 +73,25 @@ location:
   country: "United States"
   city: "San Francisco"
   timezone: "PST"
-  visa_status: "No sponsorship needed"
+  visa_status: "Unknown — confirm before answering an application"
   # Countries/regions where you ALREADY hold work authorization (no sponsorship
   # needed there). Drives the Work-Authorization signal in job evaluation
   # (modes/oferta.md → Block A "Work-authorization check"). Optional — omit or
   # leave [] if not applicable; the free-text visa_status above still applies.
-  authorized_in: ["United States"]
+  authorized_in: []
   # true if you need visa sponsorship for roles OUTSIDE authorized_in. When a JD
-  # explicitly states it will not sponsor, that is a hard blocker (see
-  # modes/_profile.md "Your Location Policy"). Omit → treated as false.
-  needs_sponsorship: false
+  # explicitly states it will not sponsor, the evaluator can only mark a hard
+  # blocker after the candidate's status has been confirmed.
+  needs_sponsorship: null
   # For remote roles outside your country:
   # onsite_availability: "1 week/month in any city"
+
+# Safe default: unknown remains unknown until the candidate confirms it. This
+# block takes precedence over legacy location.needs_sponsorship/visa_status.
+work_authorization:
+  status: "unknown" # unknown | confirmed
+  needs_sponsorship: "unknown" # unknown | true | false
+  require_confirmation_per_application: true
 
 language:
   # Human-facing output language for reports, tracker notes, PDFs, cover

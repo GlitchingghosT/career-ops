@@ -65,6 +65,14 @@ If yes → `node update-system.mjs apply`. If no → `node update-system.mjs dis
 
 AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluation, CV generation, portal scanning, batch processing. Runs on any AI coding CLI following the [open agent skill standard](https://agentskills.io) (Claude Code, Cursor, Codex, OpenCode, Qwen, Copilot, Kimi, Antigravity CLI, Grok Build CLI). Legacy Gemini API evaluation remains via `gemini-eval.mjs`.
 
+## Hermes Agent
+
+- **Interactive:** run `npm run hermes` from the repository root.
+- **One-shot:** run `npm run hermes -- chat -q "<instruction>"`.
+- The launcher normalizes the working directory so Hermes loads this `AGENTS.md` and the repository's private user-layer files consistently.
+- Hermes memory is behavioural context only. Candidate facts, authorship, work authorization, compensation, and application answers must come from `cv.md`, `article-digest.md`, `config/profile.yml`, `modes/_profile.md`, or a statement made directly in the current conversation.
+- Do not copy candidate facts from `~/.hermes/` memory into an application unless they are first confirmed and written to an approved user-layer source.
+
 ### Codex invocation
 
 - **Interactive:** run `codex` in the repo root; if `/career-ops` is unavailable, ask Codex to run the mode directly.

@@ -62,6 +62,12 @@
  * @property {string}             [provider]       Explicit provider id — bypasses detect().
  * @property {('http')}           [transport]      Default: 'http'. Reserved for future transports.
  * @property {number}             [max_pages]      Provider-specific pagination cap (avature, workday).
+ * @property {string}             [query]          Provider search query (for example JSearch).
+ * @property {string}             [location]       Provider search location (for example "Lagos, Nigeria").
+ * @property {string}             [country]        ISO 3166-1 alpha-2 country filter where supported.
+ * @property {string}             [language]       Two-letter response/search language where supported.
+ * @property {string}             [date_posted]    Posting-age window where supported.
+ * @property {boolean}            [remote_jobs_only] Limit to remote jobs where supported.
  * @property {string}             [offset_param]   avature only: pins the pagination query key and disables the
  *                                                 provider's jobOffset→offset self-heal. Rarely needed — an
  *                                                 escape hatch for a tenant the auto-switch can't resolve.

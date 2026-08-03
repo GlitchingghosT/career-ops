@@ -169,6 +169,8 @@ const SYSTEM_PATHS = [
   'update-system.mjs',
   'reserve-report-num.mjs',
   'scan.mjs',
+  'sync-portfolio.mjs',
+  'bin/career-ops-hermes',
   'pipeline-lock.mjs',
   'portal-health-lock.mjs',
   'classify-tier.mjs',

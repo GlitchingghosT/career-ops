@@ -1,6 +1,10 @@
 # Personal data (user fills these)
 cv.md
+article-digest.md
 local/
+
+# Hermes project plans may contain private workflow and candidate context.
+.hermes/
 # Everything under data/ is generated or personal at runtime — only .gitkeep
 # placeholders are tracked (verify with `git ls-files data/`). A blanket rule
 # means a new generated file (e.g. a future log/cache addition) is covered

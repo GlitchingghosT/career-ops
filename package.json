@@ -7,6 +7,8 @@
     "node": ">=18"
   },
   "scripts": {
+    "hermes": "bash bin/career-ops-hermes",
+    "portfolio:sync": "node sync-portfolio.mjs",
     "doctor": "node doctor.mjs",
     "or": "node openrouter-runner.mjs",
     "or:scan": "node openrouter-runner.mjs scan",

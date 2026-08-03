@@ -554,17 +554,21 @@ export function buildVisaFilter(visaFilter) {
 //   - min/max are annual compensation filters (use annualized values)
 //   - max: 0 means "no upper limit"
 //   - If no salary data exists on a job, it passes (conservative behavior)
-//   - If both currencies are known and mismatch (e.g., USD filter, EUR job), it fails
+//   - If both currencies are known and mismatch, fresh configured exchange rates
+//     can convert the job range into the filter currency
+//   - Missing/stale conversion data follows on_currency_mismatch: reject (legacy
+//     default) or pass (keep for manual review)
 //   - Partial ranges (min only or max only) work correctly via overlap logic
 // Uses null-safe checks (!= null, ??) to preserve 0 values correctly.
 
-export function buildSalaryFilter(salaryFilter) {
+export function buildSalaryFilter(salaryFilter, now = new Date()) {
   if (!salaryFilter) return () => true;
 
   // Coerce and validate bounds — malformed YAML must not silently mis-filter
   const min = Number(salaryFilter.min ?? 0);
   const max = Number(salaryFilter.max ?? 0);
   const filterCurrency = (salaryFilter.currency || '').trim().toUpperCase();
+  const passCurrencyMismatch = salaryFilter.on_currency_mismatch === 'pass';
 
   if (!Number.isFinite(min) || !Number.isFinite(max) || min < 0 || max < 0) {
     console.error('Warning: salary_filter.min/max must be non-negative numbers — salary filter disabled');
@@ -575,6 +579,47 @@ export function buildSalaryFilter(salaryFilter) {
     return () => true;
   }
 
+  // Optional dated FX table. Rates are units of each currency per one unit of
+  // `base` (for example base USD + NGN: 1530 means 1 USD = 1530 NGN).
+  const rawFx = salaryFilter.exchange_rates;
+  let fx = null;
+  if (rawFx && typeof rawFx === 'object') {
+    const base = String(rawFx.base || '').trim().toUpperCase();
+    const source = String(rawFx.source || '').trim();
+    const asOfText = String(rawFx.as_of || '').trim();
+    const asOf = /^\d{4}-\d{2}-\d{2}$/.test(asOfText) ? new Date(`${asOfText}T00:00:00Z`) : null;
+    const current = now instanceof Date ? now : new Date(now);
+    const maxAgeDays = Number(rawFx.max_age_days ?? 30);
+    const ageDays = asOf && Number.isFinite(current.getTime())
+      ? (current.getTime() - asOf.getTime()) / 86400000
+      : NaN;
+    const rates = {};
+    if (rawFx.rates && typeof rawFx.rates === 'object') {
+      for (const [currency, value] of Object.entries(rawFx.rates)) {
+        const code = String(currency).trim().toUpperCase();
+        const rate = Number(value);
+        if (/^[A-Z]{3}$/.test(code) && Number.isFinite(rate) && rate > 0) rates[code] = rate;
+      }
+    }
+    if (
+      /^[A-Z]{3}$/.test(base) && source && asOf && Number.isFinite(maxAgeDays) && maxAgeDays >= 0 &&
+      ageDays >= -1 && ageDays <= maxAgeDays && Object.keys(rates).length > 0
+    ) {
+      rates[base] = 1;
+      fx = { base, rates };
+    }
+  }
+
+  const convert = (amount, from, to) => {
+    if (amount == null || !Number.isFinite(Number(amount))) return amount;
+    if (from === to) return Number(amount);
+    if (!fx) return null;
+    const fromRate = fx.rates[from];
+    const toRate = fx.rates[to];
+    if (!fromRate || !toRate) return null;
+    return Number(amount) / fromRate * toRate;
+  };
+
   // If both min and max are 0, no filtering applied
   if (min === 0 && max === 0) return () => true;
 
@@ -582,16 +627,19 @@ export function buildSalaryFilter(salaryFilter) {
     // If no salary data exists, pass (conservative - many providers don't expose salary)
     if (!salary) return true;
 
-    const jobMin = salary.min ?? salary.max ?? null;
-    const jobMax = salary.max ?? salary.min ?? null;
+    let jobMin = salary.min ?? salary.max ?? null;
+    let jobMax = salary.max ?? salary.min ?? null;
 
     // If we have no usable salary values, pass conservatively
     if (jobMin == null && jobMax == null) return true;
 
-    // Currency handling - reject only if BOTH currencies exist and mismatch
     const jobCurrency = (salary.currency || '').trim().toUpperCase();
     if (filterCurrency && jobCurrency && filterCurrency !== jobCurrency) {
-      return false;
+      const convertedMin = convert(jobMin, jobCurrency, filterCurrency);
+      const convertedMax = convert(jobMax, jobCurrency, filterCurrency);
+      if (convertedMin == null || convertedMax == null) return passCurrencyMismatch;
+      jobMin = convertedMin;
+      jobMax = convertedMax;
     }
 
     // Range overlap logic - reject ONLY if job is completely outside filter range

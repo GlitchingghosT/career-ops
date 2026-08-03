@@ -133,7 +133,12 @@
 #   - min/max are annual compensation filters (use annualized values)
 #   - max: 0 means "no upper limit"
 #   - If no salary data exists on a job, it passes (conservative behavior)
-#   - If both currencies are known and differ, the job is rejected by the salary filter
+#   - Known currency mismatches reject by default (backward-compatible)
+#   - Set on_currency_mismatch: pass to keep jobs for manual review when no
+#     fresh conversion rate is available
+#   - Optional exchange_rates converts job salary into salary_filter.currency;
+#     rates are units per one base unit (e.g. base USD + NGN: 1530 means
+#     1 USD = 1530 NGN). source and as_of are required, stale tables are ignored.
 #   - Partial ranges (min only or max only) work correctly
 #   - If this entire block is absent, salary is not filtered (default behavior)
 #
@@ -142,6 +147,16 @@
 #   min: 100000
 #   max: 0
 #   currency: "USD"
+#   on_currency_mismatch: pass    # optional: pass | reject (default reject)
+#   exchange_rates:               # optional user-supplied, dated rate table
+#     base: "USD"
+#     as_of: "2026-08-01"
+#     max_age_days: 30
+#     source: "Your verifiable FX source URL/name"
+#     rates:
+#       USD: 1
+#       NGN: 1530
+#       EUR: 0.92
 
 # -- Posting-age filter (optional) --
 # Opt-in freshness gate. Skips offers whose posting date (postedAt, supplied by
@@ -644,7 +659,7 @@ search_queries:
 # Some providers are job boards / aggregators with no per-company careers
 # URL to detect, so they must be selected with an explicit `provider:`
 # field: 4dayweek, agentic-jobs, arbeitnow, arbeitsagentur, flowxtra, getonbrd, glints,
-# himalayas, ibm, jobicy, jobstreet, justjoin, landingjobs, nofluffjobs, remoteok, remotive,
+# himalayas, ibm, jobicy, jobstreet, jsearch, justjoin, landingjobs, nofluffjobs, remoteok, remotive,
 # thehub, vdab, weworkremotely, workingnomads, wttj, a16z-speedrun-talent. Examples for every built-in provider are below.
 
 # ── Built-in provider examples ────────────────────────────────────
@@ -901,6 +916,17 @@ search_queries:
 # - name: Jobicy
 #   provider: jobicy
 #   enabled: true
+#
+# - name: JSearch — Lagos frontend roles  # optional keyed API
+#   provider: jsearch
+#   query: "frontend developer OR react developer OR full stack developer"
+#   location: "Lagos, Nigeria"
+#   country: ng
+#   language: en
+#   date_posted: month                    # all | today | 3days | week | month
+#   max_pages: 3                          # 1-10; JSearch API usage is billed/quota-bound
+#   remote_jobs_only: false
+#   enabled: true                         # requires JSEARCH_API_KEY in .env
 #
 # - name: EchoJobs                        # tech jobs aggregated from company ATS boards
 #   provider: echojobs
