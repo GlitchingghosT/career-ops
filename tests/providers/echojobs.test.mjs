@@ -29,6 +29,10 @@ try {
     locations: ['San Francisco, CA', 'New York, NY'],
     remote_type: 'on_site',
     posted_at: 1783380913765,
+    required_skills: ['Go', 'React', 'TypeScript'],
+    seniority: ['Mid Level', 'Senior'],
+    employment_type: 'full_time',
+    countries: ['US'],
   };
   const n = normalizeEchojobsJob(j, 'Fallback');
   if (n && n.title === 'Senior Go Engineer' && n.company === 'Acme' &&
@@ -37,6 +41,11 @@ try {
     pass('normalizeEchojobsJob maps title/company/url/location/postedAt and keeps the external ATS URL');
   } else {
     fail(`normalizeEchojobsJob => ${JSON.stringify(n)}`);
+  }
+  if (n?.description === 'Skills: Go, React, TypeScript. Seniority: Mid Level, Senior. Employment type: full time. Countries: US.' && n?.note === 'skills: Go, React, TypeScript; level: Mid Level, Senior; type: full time; countries: US') {
+    pass('normalizeEchojobsJob preserves skills, seniority, employment type, and country detail');
+  } else {
+    fail(`EchoJobs structured detail = ${JSON.stringify(n)}`);
   }
 
   // remote/hybrid fallback when no listed place — kept distinguishable (#2258)
@@ -49,6 +58,9 @@ try {
   } else {
     fail(`remote/hybrid fallback => ${JSON.stringify([remote?.location, hybrid?.location])}`);
   }
+  const remoteUs = normalizeEchojobsJob({ title: 'X', url: 'https://jobs.lever.co/x/us', locations: [], remote_type: 'remote', countries: ['US'] });
+  if (remoteUs?.location === 'Remote (US)') pass('normalizeEchojobsJob preserves remote country restrictions in location');
+  else fail(`remote country restriction => ${JSON.stringify(remoteUs?.location)}`);
 
   // on_site with no listed place gets no location fallback at all — only
   // remote/hybrid roles are placeless-tolerant.

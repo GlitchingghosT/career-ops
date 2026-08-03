@@ -1,5 +1,6 @@
 // @ts-check
 /** @typedef {import('./_types.js').Provider} Provider */
+import { plainTextFromHtml, boundedStringList } from './_job-text.mjs';
 
 // Arbeitnow provider — board-wide aggregator feed (EU/DACH-heavy, but
 // international): https://www.arbeitnow.com/api/job-board-api
@@ -92,6 +93,14 @@ export function normalizeArbeitnowJob(j, fallbackCompany) {
   /** @type {{ title: string, url: string, company: string, location: string, postedAt?: number }} */
   const job = { title, url, company, location };
   if (Number.isFinite(j.created_at)) job.postedAt = j.created_at * 1000; // epoch seconds → ms
+  const description = plainTextFromHtml(j.description);
+  if (description) job.description = description;
+  const types = boundedStringList(j.job_types, 5, 50);
+  const skills = boundedStringList(j.tags, 12, 60);
+  const detail = [];
+  if (types.length) detail.push(`type: ${types.join(', ')}`);
+  if (skills.length) detail.push(`skills: ${skills.join(', ')}`);
+  if (detail.length) job.note = detail.join('; ').slice(0, 500);
   return job;
 }
 
@@ -110,7 +119,7 @@ export default {
       // featured `?search=` term that would narrow the board).
       const url = `${FEED_BASE}?page=${page}`;
       // redirect:'error' prevents SSRF via server-side redirects
-      const json = await ctx.fetchJson(url, { redirect: 'error' });
+      const json = await ctx.fetchJson(url, { redirect: 'error', maxBytes: 8_000_000 });
       if (!json || !Array.isArray(json.data)) {
         throw new Error(
           `arbeitnow: unexpected API response on page ${page} — expected { data: [...] }, got keys: [${json ? Object.keys(json).join(', ') : 'null'}]`,

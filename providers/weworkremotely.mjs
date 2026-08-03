@@ -1,5 +1,6 @@
 // @ts-check
 /** @typedef {import('./_types.js').Provider} Provider */
+import { plainTextFromHtml } from './_job-text.mjs';
 
 // We Work Remotely provider - board-wide RSS feed
 // (https://weworkremotely.com/remote-jobs.rss). The feed is public, no-auth,
@@ -49,7 +50,7 @@ export default {
     const feedUrl = assertWwrUrl(FEED_URL);
     // redirect:'error' prevents SSRF via server-side redirects; combined with
     // assertWwrUrl above it keeps the request pinned to weworkremotely.com.
-    const text = await ctx.fetchText(feedUrl, { redirect: 'error' });
+    const text = await ctx.fetchText(feedUrl, { redirect: 'error', maxBytes: 8_000_000 });
     return parseWwrFeed(text, fallbackCompany(entry));
   },
 };
@@ -142,13 +143,22 @@ export function parseWwrFeed(xml, defaultCompany = 'We Work Remotely') {
     const { company, title } = splitTitle(rawTitle, fallback);
     const location = tagText(item, 'region') || tagText(item, 'category');
 
-    jobs.push({
+    const job = {
       title,
       company,
       location,
       url,
       postedAt: toEpochMs(tagText(item, 'pubDate')),
-    });
+    };
+    const description = plainTextFromHtml(tagText(item, 'description'));
+    if (description) job.description = description;
+    const details = [];
+    const employmentType = tagText(item, 'type').slice(0, 60);
+    if (employmentType) details.push(`type: ${employmentType}`);
+    const expiry = toEpochMs(tagText(item, 'expires_at'));
+    if (expiry) details.push(`expires: ${new Date(expiry).toISOString().slice(0, 10)}`);
+    if (details.length) job.note = details.join('; ').slice(0, 500);
+    jobs.push(job);
   }
 
   return jobs;

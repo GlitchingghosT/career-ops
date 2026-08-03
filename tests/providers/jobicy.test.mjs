@@ -34,6 +34,10 @@ try {
         jobGeo: 'Worldwide',
         url: 'https://jobicy.com/jobs/senior-ai-engineer',
         pubDate: '2026-06-27T10:00:00',
+        jobDescription: '<p>Build React and TypeScript applications.</p>',
+        jobLevel: 'Midweight',
+        jobType: ['Full-Time'],
+        jobIndustry: ['Software Engineering'],
       },
       {
         jobTitle: 'Staff Backend Developer',
@@ -90,6 +94,12 @@ try {
     pass('parseJobicyResponse parses pubDate -> postedAt');
   } else {
     fail(`row 0 postedAt = ${JSON.stringify(jobs[0]?.postedAt)}`);
+  }
+  if (jobs[0]?.description === 'Build React and TypeScript applications.'
+      && jobs[0]?.note === 'level: Midweight; type: Full-Time; industry: Software Engineering') {
+    pass('parseJobicyResponse preserves description, level, type, and industry');
+  } else {
+    fail(`row 0 detail mapping = ${JSON.stringify(jobs[0])}`);
   }
 
   if (jobs[1]?.company === 'Globex' && jobs[1]?.title === 'Staff Backend Developer') {

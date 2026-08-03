@@ -22,6 +22,11 @@ try {
         url: 'https://remotive.com/remote-jobs/acme-staff-ai-engineer',
         company_name: 'Acme Corp',
         candidate_required_location: 'Worldwide',
+        description: '<p>Build React and Node.js products.</p>',
+        publication_date: '2026-07-01T10:00:00Z',
+        job_type: 'full_time',
+        tags: ['react', 'node.js'],
+        salary: '$60k-$90k',
       },
       {
         title: '  Platform Engineer  ',                 // leading/trailing space → trimmed
@@ -61,10 +66,11 @@ try {
     pass('remotive.fetch() keeps 2 valid jobs (drops empty-title + non-absolute-url rows)');
   else fail(`remotive.fetch() returned ${fetched.length} jobs (expected 2)`);
 
-  // Normalized shape: exactly { title, url, company, location }.
-  if (fetched[0] && Object.keys(fetched[0]).sort().join(',') === 'company,location,title,url')
-    pass('remotive.fetch() returns the normalized { title, url, company, location } shape');
-  else fail(`remotive.fetch() row 0 keys = ${JSON.stringify(fetched[0] && Object.keys(fetched[0]))}`);
+  if (fetched[0]?.description === 'Build React and Node.js products.'
+      && fetched[0]?.postedAt === Date.parse('2026-07-01T10:00:00Z')
+      && fetched[0]?.note === 'type: full time; salary: $60k-$90k; skills: react, node.js')
+    pass('remotive.fetch() preserves description, date, type, salary text, and skills');
+  else fail(`remotive.fetch() detail mapping = ${JSON.stringify(fetched[0])}`);
 
   if (fetched[0]?.title === 'Staff AI Engineer'
       && fetched[0]?.url === 'https://remotive.com/remote-jobs/acme-staff-ai-engineer'

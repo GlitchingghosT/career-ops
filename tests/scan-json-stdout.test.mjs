@@ -13,6 +13,9 @@
 import { pass, fail, warn, run, NODE, ROOT } from './helpers.mjs';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 
 console.log('\nscan.mjs — --json stdout stays machine-parseable (#1906)');
 
@@ -38,26 +41,27 @@ try {
       fail(`importing scan.mjs wrote to stdout: ${JSON.stringify(importOut.slice(0, 80))}`);
     }
 
-    // The contract a --json consumer depends on: accumulate the child's stdout,
-    // JSON.parse it, get the object back. Emitting the JSON after the import
-    // reproduces the ordering that scan-ats-full.mjs --json produces.
-    const jsonOut = run(NODE, [
-      '-e',
-      `await import(${scanUrl}); process.stdout.write(JSON.stringify({ date: '2026-01-01', offers: [] }));`,
-    ]);
-    if (jsonOut === null) {
-      fail('child emitting JSON after importing scan.mjs failed');
-    } else {
-      try {
-        const parsed = JSON.parse(jsonOut);
-        if (parsed.date === '2026-01-01' && Array.isArray(parsed.offers)) {
-          pass('stdout of a --json run parses as a single JSON object');
-        } else {
-          fail(`parsed stdout is not the emitted object: ${JSON.stringify(parsed).slice(0, 80)}`);
-        }
-      } catch (e) {
-        fail(`stdout of a --json run does not parse as JSON: ${e.message}`);
+    const tmp = mkdtempSync(join(tmpdir(), 'career-ops-json-'));
+    try {
+      const portals = join(tmp, 'portals.yml');
+      writeFileSync(portals, 'tracked_companies: []\njob_boards: []\n');
+      const jsonOut = execFileSync(NODE, [join(ROOT, 'scan.mjs'), '--dry-run', '--json'], {
+        cwd: tmp,
+        env: { ...process.env, CAREER_OPS_PORTALS: portals },
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      const parsed = JSON.parse(jsonOut);
+      if (typeof parsed.date === 'string' && parsed.dryRun === true
+          && Array.isArray(parsed.offers) && parsed.counts?.newAdded === 0) {
+        pass('real scan.mjs --dry-run --json emits one machine-parseable result object');
+      } else {
+        fail(`real --json result has wrong shape: ${JSON.stringify(parsed).slice(0, 200)}`);
       }
+    } catch (e) {
+      fail(`real scan.mjs --json contract failed: ${e.message}`);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
     }
   }
 } catch (e) {

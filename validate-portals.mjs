@@ -63,6 +63,35 @@ function validateKeywordList(value, path, errors) {
   }
 }
 
+function validateContentFilter(value, path, errors, warnings, titlePositive = new Set()) {
+  if (!isObject(value)) {
+    add(errors, path, 'content filter must be an object');
+    return;
+  }
+  if (value.require_description !== undefined && typeof value.require_description !== 'boolean') {
+    add(errors, `${path}.require_description`, 'must be a boolean when set');
+  }
+  validateKeywordList(value.positive, `${path}.positive`, errors);
+  validateKeywordList(value.negative, `${path}.negative`, errors);
+  if (value.by_title_keyword === undefined) return;
+  if (!isObject(value.by_title_keyword)) {
+    add(errors, `${path}.by_title_keyword`, 'by_title_keyword must be an object keyed by title_filter.positive keyword');
+    return;
+  }
+  for (const [kw, rule] of Object.entries(value.by_title_keyword)) {
+    const rulePath = `${path}.by_title_keyword.${kw}`;
+    if (!titlePositive.has(kw.trim().toLowerCase())) {
+      add(warnings, rulePath, `"${kw}" does not match any title_filter.positive keyword and will never apply`);
+    }
+    if (!isObject(rule)) {
+      add(errors, rulePath, 'must be an object with positive/negative keyword lists');
+      continue;
+    }
+    validateKeywordList(rule.positive, `${rulePath}.positive`, errors);
+    validateKeywordList(rule.negative, `${rulePath}.negative`, errors);
+  }
+}
+
 function validateParser(parser, path, errors) {
   if (parser === undefined || parser === null) return;
   if (!isObject(parser)) {
@@ -134,6 +163,17 @@ export async function validatePortalsConfig(config, { providerIds = new Set() } 
     }
   }
 
+  if (config.dedup_company_role !== undefined && typeof config.dedup_company_role !== 'boolean') {
+    add(errors, 'dedup_company_role', 'must be a boolean when set');
+  }
+  if (config.dedup_cross_source !== undefined && typeof config.dedup_cross_source !== 'boolean') {
+    add(errors, 'dedup_cross_source', 'must be a boolean when set');
+  }
+  if (config.max_required_experience_years !== undefined
+      && (!Number.isFinite(Number(config.max_required_experience_years)) || Number(config.max_required_experience_years) < 0)) {
+    add(errors, 'max_required_experience_years', 'must be a non-negative number when set');
+  }
+
   if (config.location_filter !== undefined) {
     if (!isObject(config.location_filter)) {
       add(errors, 'location_filter', 'location_filter must be an object');
@@ -145,35 +185,12 @@ export async function validatePortalsConfig(config, { providerIds = new Set() } 
   }
 
   if (config.content_filter !== undefined) {
-    if (!isObject(config.content_filter)) {
-      add(errors, 'content_filter', 'content_filter must be an object');
-    } else {
-      validateKeywordList(config.content_filter.positive, 'content_filter.positive', errors);
-      validateKeywordList(config.content_filter.negative, 'content_filter.negative', errors);
-      if (config.content_filter.by_title_keyword !== undefined) {
-        if (!isObject(config.content_filter.by_title_keyword)) {
-          add(errors, 'content_filter.by_title_keyword', 'by_title_keyword must be an object keyed by title_filter.positive keyword');
-        } else {
-          const titlePositive = new Set(
-            (Array.isArray(config.title_filter?.positive) ? config.title_filter.positive : [])
-              .filter(k => typeof k === 'string')
-              .map(k => k.trim().toLowerCase())
-          );
-          for (const [kw, rule] of Object.entries(config.content_filter.by_title_keyword)) {
-            const path = `content_filter.by_title_keyword.${kw}`;
-            if (!titlePositive.has(kw.trim().toLowerCase())) {
-              add(warnings, path, `"${kw}" does not match any title_filter.positive keyword and will never apply`);
-            }
-            if (!isObject(rule)) {
-              add(errors, path, 'must be an object with positive/negative keyword lists');
-              continue;
-            }
-            validateKeywordList(rule.positive, `${path}.positive`, errors);
-            validateKeywordList(rule.negative, `${path}.negative`, errors);
-          }
-        }
-      }
-    }
+    const titlePositive = new Set(
+      (Array.isArray(config.title_filter?.positive) ? config.title_filter.positive : [])
+        .filter(k => typeof k === 'string')
+        .map(k => k.trim().toLowerCase())
+    );
+    validateContentFilter(config.content_filter, 'content_filter', errors, warnings, titlePositive);
   }
 
   if (config.visa_filter !== undefined) {
@@ -193,6 +210,42 @@ export async function validatePortalsConfig(config, { providerIds = new Set() } 
 
   if (config.search_queries !== undefined && !Array.isArray(config.search_queries)) {
     add(errors, 'search_queries', 'search_queries must be an array when set');
+  } else if (Array.isArray(config.search_queries)) {
+    for (const [idx, query] of config.search_queries.entries()) {
+      const base = `search_queries[${idx}]`;
+      if (!isObject(query)) {
+        add(errors, base, 'search query entry must be an object');
+        continue;
+      }
+      if (query.enabled === false) continue;
+      if (typeof query.name !== 'string' || !query.name.trim()) add(errors, `${base}.name`, 'enabled search query must have a non-empty string name');
+      if (typeof query.query !== 'string' || !query.query.trim()) add(errors, `${base}.query`, 'enabled search query must have a non-empty string query');
+    }
+  }
+
+  if (config.job_boards !== undefined && !Array.isArray(config.job_boards)) {
+    add(errors, 'job_boards', 'job_boards must be an array when set');
+  } else if (Array.isArray(config.job_boards)) {
+    const titlePositive = new Set(
+      (Array.isArray(config.title_filter?.positive) ? config.title_filter.positive : [])
+        .filter(k => typeof k === 'string')
+        .map(k => k.trim().toLowerCase())
+    );
+    for (const [idx, board] of config.job_boards.entries()) {
+      const base = `job_boards[${idx}]`;
+      if (!isObject(board)) {
+        add(errors, base, 'job board entry must be an object');
+        continue;
+      }
+      if (board.enabled === false) continue;
+      if (typeof board.name !== 'string' || !board.name.trim()) add(errors, `${base}.name`, 'enabled job board must have a non-empty string name');
+      if (typeof board.provider !== 'string' || !board.provider.trim()) {
+        add(errors, `${base}.provider`, 'enabled job board must have a non-empty provider');
+      } else if (!providerIds.has(board.provider)) {
+        add(errors, `${base}.provider`, `unknown provider "${board.provider}"`);
+      }
+      if (board.content_filter !== undefined) validateContentFilter(board.content_filter, `${base}.content_filter`, errors, warnings, titlePositive);
+    }
   }
 
   const companies = config.tracked_companies;

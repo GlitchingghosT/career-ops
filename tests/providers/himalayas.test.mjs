@@ -36,6 +36,14 @@ try {
         pubDate: 1782538666,
         applicationLink: 'https://himalayas.app/companies/acme-labs/jobs/staff-ai-engineer',
         guid: 'https://himalayas.app/companies/acme-labs/jobs/staff-ai-engineer-guid',
+        description: '<p>Build <strong>React</strong> products. 6+ years required.</p>',
+        employmentType: 'Full Time',
+        seniority: ['Senior'],
+        categories: ['React', 'TypeScript'],
+        minSalary: 80000,
+        maxSalary: 100000,
+        currency: 'USD',
+        salaryPeriod: 'annual',
       },
       {
         title: 'Product Manager',
@@ -98,6 +106,13 @@ try {
     pass('parseHimalayasResponse converts epoch seconds pubDate -> postedAt ms');
   } else {
     fail(`row 0 postedAt = ${JSON.stringify(jobs[0]?.postedAt)}`);
+  }
+  if (jobs[0]?.description === 'Build React products. 6+ years required.'
+      && jobs[0]?.salary?.min === 80000 && jobs[0]?.salary?.max === 100000
+      && jobs[0]?.note === 'level: Senior; type: Full Time; skills: React, TypeScript') {
+    pass('parseHimalayasResponse preserves description, annual salary, seniority, type, and skills');
+  } else {
+    fail(`row 0 detail mapping = ${JSON.stringify(jobs[0])}`);
   }
 
   if (jobs[1]?.url === 'https://himalayas.app/companies/fallback-co/jobs/product-manager') {

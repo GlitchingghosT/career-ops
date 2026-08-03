@@ -1,5 +1,6 @@
 // @ts-check
 /** @typedef {import('./_types.js').Provider} Provider */
+import { plainTextFromHtml, boundedStringList } from './_job-text.mjs';
 
 // Himalayas provider - board-wide remote jobs API
 // (https://himalayas.app/jobs/api?limit=50). Returns { jobs: [...] }. The
@@ -84,7 +85,7 @@ export default {
     const feedUrl = assertHimalayasUrl(FEED_URL);
     // redirect:'error' prevents SSRF via server-side redirects; combined with
     // assertHimalayasUrl above it keeps the request pinned to himalayas.app.
-    const json = await ctx.fetchJson(feedUrl, { redirect: 'error' });
+    const json = await ctx.fetchJson(feedUrl, { redirect: 'error', maxBytes: 5_000_000 });
     if (!json || !Array.isArray(json.jobs)) {
       throw new Error(`himalayas: unexpected API response - expected { jobs: [...] }, got keys: [${json ? Object.keys(json).join(', ') : 'null'}]`);
     }
@@ -116,13 +117,32 @@ export function parseHimalayasResponse(json) {
     const url = cleanHimalayasUrl(item.applicationLink) || cleanHimalayasUrl(item.guid);
     if (!url) continue;
 
-    jobs.push({
+    const job = {
       title,
       url,
       company: cleanText(item.companyName),
       location: locationText(item.locationRestrictions),
       postedAt: toEpochMs(item.pubDate),
-    });
+    };
+    const description = plainTextFromHtml(item.description);
+    if (description) job.description = description;
+    const seniority = boundedStringList(item.seniority, 6, 50);
+    const skills = boundedStringList(item.categories, 15, 60);
+    const employmentType = cleanText(item.employmentType).slice(0, 60);
+    const details = [];
+    if (seniority.length) details.push(`level: ${seniority.join(', ')}`);
+    if (employmentType) details.push(`type: ${employmentType}`);
+    if (skills.length) details.push(`skills: ${skills.join(', ')}`);
+    if (details.length) job.note = details.join('; ').slice(0, 500);
+    const min = Number(item.minSalary);
+    const max = Number(item.maxSalary);
+    const currency = cleanText(item.currency).toUpperCase();
+    if (String(item.salaryPeriod).toLowerCase() === 'annual'
+        && /^[A-Z]{3}$/.test(currency)
+        && Number.isFinite(min) && Number.isFinite(max) && min > 0 && max >= min) {
+      job.salary = { min, max, currency };
+    }
+    jobs.push(job);
   }
 
   return jobs;

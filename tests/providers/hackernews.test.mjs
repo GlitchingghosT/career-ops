@@ -8,7 +8,7 @@ console.log('\nProvider — hackernews');
 try {
   const hackernewsModule = await import(pathToFileURL(join(ROOT, 'providers/hackernews.mjs')).href);
   const hn = hackernewsModule.default;
-  const { parseHnComment, resolveLatestThreadId } = hackernewsModule;
+  const { parseHnComment, parseHnCommentJobs, resolveLatestThreadId } = hackernewsModule;
 
   // resolveLatestThreadId ─ happy path
   const fakeSearch = {
@@ -45,6 +45,11 @@ try {
     pass('parseHnComment extracts company and location from pipe-delimited header');
   } else {
     fail(`parseHnComment pipe format: ${JSON.stringify(parsed)}`);
+  }
+  if (parsed?.title === 'Senior Engineer') {
+    pass('parseHnComment uses the role segment as the normalized title');
+  } else {
+    fail(`parseHnComment role title: ${JSON.stringify(parsed?.title)}`);
   }
   if (parsed && parsed.url === 'https://acme.com/jobs/123') {
     pass('parseHnComment extracts URL from comment text');
@@ -104,6 +109,55 @@ try {
     fail(`parseHnComment body-paragraph URL: ${JSON.stringify(parsedBleed?.url)}`);
   }
 
+  const encodedSlash = parseHnComment(
+    '<p>Acme | Frontend Developer | Remote worldwide | https:&#x2F;&#x2F;acme.example&#x2F;jobs</p><p>Build React and TypeScript interfaces.</p>',
+    'https://news.ycombinator.com/item?id=1',
+  );
+  if (encodedSlash?.url === 'https://acme.example/jobs' && encodedSlash?.title === 'Frontend Developer') {
+    pass('parseHnComment decodes numeric entities before URL and role extraction');
+  } else {
+    fail(`parseHnComment numeric entity handling: ${JSON.stringify(encodedSlash)}`);
+  }
+  if (encodedSlash?.description?.includes('Build React and TypeScript interfaces.')) {
+    pass('parseHnComment preserves bounded plain-text comment detail');
+  } else {
+    fail(`parseHnComment description missing: ${JSON.stringify(encodedSlash)}`);
+  }
+  const markdownUrl = parseHnComment(
+    'Wildflower Health | Junior Software Engineer | Remote (US) | [https://wildflowerhealth.com/](https://wildflowerhealth.com/jobs)',
+    'https://news.ycombinator.com/item?id=1',
+  );
+  if (markdownUrl?.url === 'https://wildflowerhealth.com/jobs') {
+    pass('parseHnComment extracts a clean URL from Markdown links');
+  } else {
+    fail(`parseHnComment Markdown URL handling: ${JSON.stringify(markdownUrl?.url)}`);
+  }
+
+  const multiRole = parseHnCommentJobs(
+    'MixRank | Software Engineers | 100% Remote (Global) | Full-Time<p>We hire globally.<p>Junior Software Engineer - Remote (Global), Full-Time<p>0–3 years of professional software experience. TypeScript and web development are beneficial.<p>Apply here: <a href="https:&#x2F;&#x2F;www.ycombinator.com&#x2F;companies&#x2F;mixrank&#x2F;jobs&#x2F;junior">apply</a><p>Software Engineer - Remote (Global), Full-Time<p>Professional Python and PostgreSQL experience.<p>Apply here: <a href="https:&#x2F;&#x2F;www.ycombinator.com&#x2F;companies&#x2F;mixrank&#x2F;jobs&#x2F;general">apply</a>',
+    'https://news.ycombinator.com/item?id=1',
+  );
+  if (multiRole.length === 2
+      && multiRole[0]?.title === 'Junior Software Engineer - Remote (Global), Full-Time'
+      && multiRole[0]?.url.endsWith('/junior')
+      && multiRole[1]?.title === 'Software Engineer - Remote (Global), Full-Time'
+      && multiRole[1]?.url.endsWith('/general')) {
+    pass('parseHnCommentJobs splits one employer comment into exact apply-linked roles');
+  } else {
+    fail(`parseHnCommentJobs multi-role result: ${JSON.stringify(multiRole)}`);
+  }
+
+  const broadRoleNames = parseHnCommentJobs(
+    'Acme | Engineers | Remote<p>Junior Data Engineer<p>Build pipelines.<p>Apply here: https://example.com/data<p>DevOps Engineer<p>Run infrastructure.<p>Apply here: https://example.com/devops',
+  );
+  if (broadRoleNames.length === 2
+      && broadRoleNames[0]?.title === 'Junior Data Engineer'
+      && broadRoleNames[1]?.title === 'DevOps Engineer') {
+    pass('parseHnCommentJobs recognizes data and DevOps engineering titles');
+  } else {
+    fail(`parseHnCommentJobs broad engineering titles: ${JSON.stringify(broadRoleNames)}`);
+  }
+
   // parseHnComment ─ deleted / empty comments return null
   if (parseHnComment('', '') === null && parseHnComment(null, '') === null) {
     pass('parseHnComment returns null for empty / null input');
@@ -137,10 +191,11 @@ try {
   };
 
   let searchFetched = false;
+  let searchUrl = '';
   let itemFetched = false;
   const mockCtx = {
     async fetchJson(url, _opts) {
-      if (url.includes('search_by_date')) { searchFetched = true; return fakeSearchResp; }
+      if (url.includes('search_by_date')) { searchFetched = true; searchUrl = url; return fakeSearchResp; }
       if (url.includes(`/items/${FAKE_THREAD_ID}`)) { itemFetched = true; return fakeItemResp; }
       throw new Error(`hackernews mock: unexpected fetch ${url}`);
     },
@@ -152,6 +207,11 @@ try {
     pass('hackernews.fetch() calls search API then items API');
   } else {
     fail(`hackernews.fetch() API calls: search=${searchFetched} item=${itemFetched}`);
+  }
+  if (searchUrl.includes('tags=story,author_whoishiring') && !searchUrl.includes('query=')) {
+    pass('hackernews.fetch() pins monthly-thread discovery to the whoishiring author tag');
+  } else {
+    fail(`hackernews.fetch() used drift-prone search URL: ${searchUrl}`);
   }
 
   if (jobs.length === 2) {

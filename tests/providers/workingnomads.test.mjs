@@ -24,6 +24,10 @@ try {
       url: 'https://www.workingnomads.com/jobs/acme-senior-ai-engineer',
       company_name: '  Acme Corp  ',                 // surrounding space → trimmed
       location: '  Remote (Worldwide)  ',            // surrounding space → trimmed
+      description: '<p>Build React and TypeScript applications.</p>',
+      pub_date: '2026-07-01T10:00:00Z',
+      category_name: 'Development',
+      tags: 'react,typescript,node.js',
     },
     {
       title: '  Platform Engineer  ',              // leading/trailing space → trimmed
@@ -62,10 +66,11 @@ try {
     pass('workingnomads.fetch() keeps 2 valid jobs (drops empty-title + non-absolute-url rows)');
   else fail(`workingnomads.fetch() returned ${fetched.length} jobs (expected 2)`);
 
-  // Normalized shape: exactly { title, url, company, location }.
-  if (fetched[0] && Object.keys(fetched[0]).sort().join(',') === 'company,location,title,url')
-    pass('workingnomads.fetch() returns the normalized { title, url, company, location } shape');
-  else fail(`workingnomads.fetch() row 0 keys = ${JSON.stringify(fetched[0] && Object.keys(fetched[0]))}`);
+  if (fetched[0]?.description === 'Build React and TypeScript applications.'
+      && fetched[0]?.postedAt === Date.parse('2026-07-01T10:00:00Z')
+      && fetched[0]?.note === 'category: Development; skills: react, typescript, node.js')
+    pass('workingnomads.fetch() preserves description, date, category, and skills');
+  else fail(`workingnomads.fetch() detail mapping = ${JSON.stringify(fetched[0])}`);
 
   if (fetched[0]?.title === 'Senior AI Engineer'
       && fetched[0]?.url === 'https://www.workingnomads.com/jobs/acme-senior-ai-engineer'

@@ -36,6 +36,9 @@ try {
       <pubDate>Thu, 13 Nov 2025 14:10:41 +0000</pubDate>
       <region><![CDATA[Anywhere in the World]]></region>
       <category>Programming</category>
+      <type>Full-Time</type>
+      <description>&lt;p&gt;Build &lt;strong&gt;React&lt;/strong&gt; and Node.js products.&lt;/p&gt;</description>
+      <expires_at>Sat, 13 Dec 2025 14:10:41 +0000</expires_at>
     </item>
     <item>
       <title>Principal Platform Engineer &amp; Tooling</title>
@@ -87,6 +90,12 @@ try {
     pass('parseWwrFeed parses pubDate -> postedAt');
   } else {
     fail(`row 0 postedAt = ${JSON.stringify(jobs[0]?.postedAt)}`);
+  }
+  if (jobs[0]?.description === 'Build React and Node.js products.'
+      && jobs[0]?.note === 'type: Full-Time; expires: 2025-12-13') {
+    pass('parseWwrFeed preserves plain-text description, employment type, and expiry');
+  } else {
+    fail(`row 0 detail mapping = ${JSON.stringify(jobs[0])}`);
   }
 
   if (jobs[1]?.company === 'WWR Board' && jobs[1]?.title === 'Principal Platform Engineer & Tooling') {

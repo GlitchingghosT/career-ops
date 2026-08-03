@@ -50,6 +50,8 @@ try {
   else fail(`first location/date mismatch: ${JSON.stringify(jobs[0])}`);
   if (!('description' in jobs[0])) pass('parseMyJobMagFeed does not republish feed descriptions');
   else fail('parseMyJobMagFeed retained third-party description content');
+  if (jobs[0]?.note === 'metadata-only: verify requirements, experience, salary, and eligibility on canonical page') pass('parseMyJobMagFeed labels metadata-only records for mandatory human review');
+  else fail(`MyJobMag metadata-only note missing: ${JSON.stringify(jobs[0])}`);
   if (jobs[1]?.title === 'Node.js Engineer & API Developer' && jobs[1]?.company === 'Acme Nigeria' && jobs[1]?.postedAt === undefined) pass('parseMyJobMagFeed decodes entities and omits invalid dates');
   else fail(`second item mismatch: ${JSON.stringify(jobs[1])}`);
 

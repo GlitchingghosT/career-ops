@@ -82,7 +82,13 @@ export function parseMyJobMagFeed(xml) {
     if (!url || !rawTitle) continue;
     const { title, company } = splitRoleCompany(rawTitle);
     if (!title) continue;
-    const job = { title, url, company, location: 'Nigeria' };
+    const job = {
+      title,
+      url,
+      company,
+      location: 'Nigeria',
+      note: 'metadata-only: verify requirements, experience, salary, and eligibility on canonical page',
+    };
     const postedAt = parseDate(tagText(item, 'pubDate', 100));
     if (postedAt !== undefined) job.postedAt = postedAt;
     jobs.push(job);

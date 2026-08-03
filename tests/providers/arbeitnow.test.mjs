@@ -15,7 +15,7 @@ try {
 
   // normalizeArbeitnowJob — field mapping.
   const full = normalizeArbeitnowJob(
-    { title: '  Staff AI Engineer  ', url: '  https://www.arbeitnow.com/jobs/x1  ', company_name: '  Acme Co  ', location: '  Berlin  ', remote: false, created_at: 1782693032 },
+    { title: '  Staff AI Engineer  ', url: '  https://www.arbeitnow.com/jobs/x1  ', company_name: '  Acme Co  ', location: '  Berlin  ', remote: false, created_at: 1782693032, description: '<p>Build <strong>React</strong> interfaces &amp; Node.js APIs.</p>', job_types: ['full_time'], tags: ['React', 'Node.js'] },
     'Fallback',
   );
   if (full && full.title === 'Staff AI Engineer' && full.url === 'https://www.arbeitnow.com/jobs/x1'
@@ -23,6 +23,11 @@ try {
     pass('normalizeArbeitnowJob maps + trims title/url/company/location and converts created_at seconds → ms');
   } else {
     fail(`normalizeArbeitnowJob full row = ${JSON.stringify(full)}`);
+  }
+  if (full?.description === 'Build React interfaces & Node.js APIs.' && full?.note === 'type: full_time; skills: React, Node.js') {
+    pass('normalizeArbeitnowJob preserves bounded plain-text description and structured job details');
+  } else {
+    fail(`normalizeArbeitnowJob detail mapping = ${JSON.stringify(full)}`);
   }
 
   // remote:true appends "Remote" to the location.

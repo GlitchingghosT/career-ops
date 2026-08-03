@@ -1,5 +1,6 @@
 // @ts-check
 /** @typedef {import('./_types.js').Provider} Provider */
+import { boundedStringList } from './_job-text.mjs';
 
 // EchoJobs provider — board-wide public JSON feed of tech jobs aggregated from
 // company ATS boards (https://echojobs.io/api/jobs). Public, zero-auth, paginated
@@ -101,6 +102,7 @@ export function normalizeEchojobsJob(j, fallbackCompany) {
       ? j.company_name.trim()
       : fallbackCompany || 'EchoJobs';
 
+  const countries = boundedStringList(j.countries, 12, 50);
   let location = '';
   if (Array.isArray(j.locations)) {
     location = j.locations
@@ -120,13 +122,27 @@ export function normalizeEchojobsJob(j, fallbackCompany) {
     // to list a city (#2258).
     if (!HYBRID_MARKER.test(location)) location = [location, 'Hybrid'].filter(Boolean).join(' · ');
   } else if (!location && remoteType === 'remote') {
-    location = 'Remote';
+    const restrictedCountries = countries.filter(country => !/^(remote|worldwide|global|anywhere|all)$/i.test(country));
+    location = restrictedCountries.length ? `Remote (${restrictedCountries.join(', ')})` : 'Remote';
   }
 
   /** @type {{ title: string, url: string, company: string, location: string, postedAt?: number }} */
   const job = { title, url, company, location };
   // `posted_at` is already epoch milliseconds.
   if (Number.isFinite(j.posted_at) && j.posted_at > 0) job.postedAt = j.posted_at;
+  const skills = boundedStringList(j.required_skills, 15, 60);
+  const seniority = boundedStringList(j.seniority, 8, 50);
+  const employmentType = typeof j.employment_type === 'string'
+    ? j.employment_type.trim().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').slice(0, 60)
+    : '';
+  const sentences = [];
+  const note = [];
+  if (skills.length) { sentences.push(`Skills: ${skills.join(', ')}.`); note.push(`skills: ${skills.join(', ')}`); }
+  if (seniority.length) { sentences.push(`Seniority: ${seniority.join(', ')}.`); note.push(`level: ${seniority.join(', ')}`); }
+  if (employmentType) { sentences.push(`Employment type: ${employmentType}.`); note.push(`type: ${employmentType}`); }
+  if (countries.length) { sentences.push(`Countries: ${countries.join(', ')}.`); note.push(`countries: ${countries.join(', ')}`); }
+  if (sentences.length) job.description = sentences.join(' ').slice(0, 20_000);
+  if (note.length) job.note = note.join('; ').slice(0, 500);
   return job;
 }
 
@@ -148,7 +164,7 @@ export default {
       // is meaningful, then redirect:'error' blocks SSRF via server-side
       // redirects — together they keep every page request on echojobs.io.
       const url = assertEchojobsUrl(`${FEED_BASE}?per_page=${PER_PAGE}&page=${page}`);
-      const json = /** @type {any} */ (await ctx.fetchJson(url, { redirect: 'error' }));
+      const json = /** @type {any} */ (await ctx.fetchJson(url, { redirect: 'error', maxBytes: 5_000_000 }));
       if (!json || !Array.isArray(json.jobs)) {
         throw new Error(
           `echojobs: unexpected API response on page ${page} — expected { jobs: [...] }, got keys: [${json ? Object.keys(json).join(', ') : 'null'}]`,

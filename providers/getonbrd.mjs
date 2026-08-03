@@ -1,5 +1,6 @@
 // @ts-check
 /** @typedef {import('./_types.js').Provider} Provider */
+import { plainTextFromHtml } from './_job-text.mjs';
 
 // Get on Board provider — board-wide feed for the tech "programming" category
 // (https://www.getonbrd.com/api/v0/categories/programming/jobs). Public,
@@ -87,7 +88,7 @@ export function normalizeGetonbrdJob(j, fallbackCompany) {
   // ["Chile"]); older/edge payloads may send a plain string. Handle both.
   let location = '';
   if (attr.remote === true) {
-    location = 'Remote';
+    location = attr.remote_modality === 'remote_local' ? 'Remote (country-restricted)' : 'Remote';
   } else if (Array.isArray(attr.countries)) {
     location = attr.countries
       .filter((c) => typeof c === 'string' && c.trim())
@@ -101,6 +102,18 @@ export function normalizeGetonbrdJob(j, fallbackCompany) {
   const job = { title, url, company, location };
   // `attributes.published_at` is epoch SECONDS → convert to ms (omitted when absent).
   if (Number.isFinite(attr.published_at) && attr.published_at > 0) job.postedAt = attr.published_at * 1000;
+  const description = [attr.description, attr.functions, attr.desirable]
+    .map(value => plainTextFromHtml(value, 8_000))
+    .filter(Boolean)
+    .join(' ')
+    .slice(0, 20_000);
+  if (description) job.description = description;
+  const details = [];
+  if (attr.remote_modality === 'remote_local') details.push('remote scope: country-restricted');
+  else if (attr.remote_modality === 'fully_remote') details.push('remote scope: fully remote');
+  if (typeof attr.lang === 'string' && attr.lang.trim() && attr.lang !== 'lang_not_specified') details.push(`language: ${attr.lang.trim().slice(0, 20)}`);
+  if (Number.isInteger(attr.applications_count) && attr.applications_count >= 0) details.push(`applications: ${attr.applications_count}`);
+  if (details.length) job.note = details.join('; ').slice(0, 500);
   return job;
 }
 
@@ -117,7 +130,7 @@ export default {
     for (let page = 1; page <= maxPages; page++) {
       const url = `${FEED_BASE}?per_page=${PER_PAGE}&expand[]=company&page=${page}`;
       // redirect:'error' prevents SSRF via server-side redirects
-      const json = await ctx.fetchJson(url, { redirect: 'error' });
+      const json = await ctx.fetchJson(url, { redirect: 'error', maxBytes: 8_000_000 });
       if (!json || !Array.isArray(json.data)) {
         throw new Error(
           `getonbrd: unexpected API response on page ${page} — expected { data: [...] }, got keys: [${json ? Object.keys(json).join(', ') : 'null'}]`,

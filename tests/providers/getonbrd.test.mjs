@@ -22,6 +22,12 @@ try {
           title: 'Staff AI Engineer',
           remote: true,
           countries: 'Remote',
+          description: '<p>Build <strong>React</strong> interfaces.</p>',
+          functions: '<p>Own Node.js APIs.</p>',
+          desirable: '<p>TypeScript preferred.</p>',
+          remote_modality: 'remote_local',
+          lang: 'en',
+          applications_count: 27,
           company: { data: { attributes: { name: 'Acme Corp' } } },
         },
         links: { public_url: 'https://www.getonbrd.com/jobs/acme-staff-ai-engineer' },
@@ -66,15 +72,15 @@ try {
     pass('getonbrd.fetch() keeps 2 valid jobs (drops empty-title + non-absolute-url rows)');
   else fail(`getonbrd.fetch() returned ${fetched.length} jobs (expected 2)`);
 
-  if (fetched[0] && Object.keys(fetched[0]).sort().join(',') === 'company,location,title,url')
-    pass('getonbrd.fetch() returns the normalized { title, url, company, location } shape');
-  else fail(`getonbrd.fetch() row 0 keys = ${JSON.stringify(fetched[0] && Object.keys(fetched[0]))}`);
+  if (fetched[0]?.description === 'Build React interfaces. Own Node.js APIs. TypeScript preferred.' && fetched[0]?.note === 'remote scope: country-restricted; language: en; applications: 27')
+    pass('getonbrd.fetch() preserves plain-text requirements and remote/application detail');
+  else fail(`getonbrd.fetch() row 0 detail = ${JSON.stringify(fetched[0])}`);
 
   if (fetched[0]?.title === 'Staff AI Engineer'
       && fetched[0]?.url === 'https://www.getonbrd.com/jobs/acme-staff-ai-engineer'
       && fetched[0]?.company === 'Acme Corp'
-      && fetched[0]?.location === 'Remote')
-    pass('getonbrd.fetch() maps title/url/company and uses "Remote" when remote===true');
+      && fetched[0]?.location === 'Remote (country-restricted)')
+    pass('getonbrd.fetch() maps remote_local as country-restricted rather than generic Remote');
   else fail(`getonbrd.fetch() row 0 = ${JSON.stringify(fetched[0])}`);
 
   if (fetched[1]?.title === 'Platform Engineer'

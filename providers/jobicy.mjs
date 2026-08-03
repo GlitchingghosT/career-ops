@@ -1,5 +1,6 @@
 // @ts-check
 /** @typedef {import('./_types.js').Provider} Provider */
+import { plainTextFromHtml, boundedStringList } from './_job-text.mjs';
 
 // Jobicy provider — board-wide remote-jobs aggregator feed
 // (https://jobicy.com/api/v2/remote-jobs?count=50). Returns { jobs: [...] }.
@@ -24,7 +25,7 @@ export default {
    */
   async fetch(entry, ctx) {
     // redirect:'error' prevents SSRF via server-side redirects
-    const json = await ctx.fetchJson(FEED_URL, { redirect: 'error' });
+    const json = await ctx.fetchJson(FEED_URL, { redirect: 'error', maxBytes: 5_000_000 });
     if (!json || !Array.isArray(json.jobs)) {
       throw new Error(`jobicy: unexpected API response — expected { jobs: [...] }, got keys: [${json ? Object.keys(json).join(', ') : 'null'}]`);
     }
@@ -72,13 +73,23 @@ export function parseJobicyResponse(json, defaultCompany = 'Jobicy') {
       const location = typeof j.jobGeo === 'string' ? j.jobGeo.trim() : '';
       const postedAt = toEpochMs(j.pubDate);
 
-      return {
+      const job = {
         title,
         url,
         company,
         location,
         postedAt,
       };
+      const description = plainTextFromHtml(j.jobDescription);
+      if (description) job.description = description;
+      const details = [];
+      if (typeof j.jobLevel === 'string' && j.jobLevel.trim()) details.push(`level: ${j.jobLevel.trim().slice(0, 60)}`);
+      const types = boundedStringList(j.jobType, 5, 50);
+      const industries = boundedStringList(j.jobIndustry, 8, 60);
+      if (types.length) details.push(`type: ${types.join(', ')}`);
+      if (industries.length) details.push(`industry: ${industries.join(', ')}`);
+      if (details.length) job.note = details.join('; ').slice(0, 500);
+      return job;
     })
     .filter(j => j !== null);
 }

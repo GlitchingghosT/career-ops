@@ -41,7 +41,7 @@ import { buildTrustValidator } from './providers/_trust-validator.mjs';
 import { loadProviders, resolveProvider } from './providers/_registry.mjs';
 import { mergeProviderPlugins } from './plugins/_engine.mjs';
 import { classifyFetchError } from './verify-portals.mjs';
-import { fingerprintText, findCrossListings } from './fingerprint-core.mjs';
+import { fingerprintText, findCrossListings, similarity } from './fingerprint-core.mjs';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
 import { normalizeCompany } from './tracker-utils.mjs';
 import { normalizeCompanyName } from './invite-match.mjs';
@@ -366,6 +366,7 @@ export function buildContentFilter(contentFilter) {
   if (!contentFilter) return () => true;
   const positive = normalizeKeywordList(contentFilter.positive);
   const negative = normalizeKeywordList(contentFilter.negative);
+  const requireDescription = contentFilter.require_description === true;
 
   const byTitleKeyword = new Map();
   if (contentFilter.by_title_keyword && typeof contentFilter.by_title_keyword === 'object' && !Array.isArray(contentFilter.by_title_keyword)) {
@@ -379,7 +380,7 @@ export function buildContentFilter(contentFilter) {
   }
 
   return (description, matchedKeywords = []) => {
-    if (typeof description !== 'string' || description.trim() === '') return true;
+    if (typeof description !== 'string' || description.trim() === '') return !requireDescription;
     const lower = description.toLowerCase();
 
     const overrides = matchedKeywords
@@ -398,6 +399,37 @@ export function buildContentFilter(contentFilter) {
     if (negative.length > 0 && negative.some(k => lower.includes(k))) return false;
     if (positive.length === 0) return true;
     return positive.some(k => lower.includes(k));
+  };
+}
+
+export function buildCombinedContentFilter(globalContentFilter, portalContentFilter, titleFilterConfig) {
+  const globalFilter = buildContentFilter(globalContentFilter);
+  const portalFilter = buildContentFilter(portalContentFilter);
+  return (job) => {
+    const matched = matchedTitleKeywords(job?.title, titleFilterConfig);
+    return globalFilter(job?.description, matched) && portalFilter(job?.description, matched);
+  };
+}
+
+export function buildRequiredExperienceFilter(maxRequiredYears) {
+  if (maxRequiredYears == null || maxRequiredYears === '') return () => true;
+  const ceiling = Number(maxRequiredYears);
+  if (!Number.isFinite(ceiling) || ceiling < 0) return () => true;
+
+  return (description) => {
+    if (typeof description !== 'string' || !description.trim()) return true;
+    let text = description.toLowerCase().replace(/\u00a0/g, ' ');
+    const minimums = [];
+    const rangeRe = /\b(\d{1,2})\s*(?:-|–|—|to)\s*(\d{1,2})\s*(?:years?|yrs?)\s+(?:of\s+)?(?:(?:professional|commercial|relevant|industry|work|hands-on|software|engineering|development|frontend|front-end|backend|full[- ]stack)\s+){0,4}experience\b/gi;
+    text = text.replace(rangeRe, (match, lower) => {
+      minimums.push(Number(lower));
+      return ' '.repeat(match.length);
+    });
+    const minimumRe = /\b(?:(?:at\s+least|minimum(?:\s+of)?|over|more\s+than)\s+)?(\d{1,2})\s*\+?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:(?:professional|commercial|relevant|industry|work|hands-on|software|engineering|development|frontend|front-end|backend|full[- ]stack)\s+){0,4}experience\b/gi;
+    for (const match of text.matchAll(minimumRe)) minimums.push(Number(match[1]));
+    const shorthandMinimumRe = /\b(?:at\s+least|minimum(?:\s+of)?|over|more\s+than)\s+(\d{1,2})\s+(?:(?:years?|yrs?)\s+)?(?:of\s+)?(?:professional|commercial|relevant|industry|work|hands-on)(?=\s*(?:[;,.]|$))/gi;
+    for (const match of text.matchAll(shorthandMinimumRe)) minimums.push(Number(match[1]));
+    return minimums.every(years => years <= ceiling);
   };
 }
 
@@ -1261,6 +1293,81 @@ export function companyRoleDedupKey(company, role, canonicalize = defaultCompany
   return `${canonicalize(company)}::${normalizeRoleForDedup(role)}`;
 }
 
+export function companyRoleDedupEnabled(config) {
+  return config?.dedup_company_role !== false;
+}
+
+export function sanitizeProviderJob(job) {
+  if (!job || typeof job !== 'object' || Array.isArray(job)) return null;
+  const bounded = (value, max) => typeof value === 'string'
+    ? value.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
+    : '';
+  const title = bounded(job.title, 300);
+  const rawUrl = typeof job.url === 'string' ? job.url.trim().slice(0, 2048) : '';
+  if (!title || !rawUrl || /[\u0000-\u0020\u007f]/.test(rawUrl)) return null;
+  let parsedUrl;
+  try { parsedUrl = new URL(rawUrl); } catch { return null; }
+  if (!['https:', 'http:', 'local:'].includes(parsedUrl.protocol) || parsedUrl.username || parsedUrl.password) return null;
+
+  const out = {
+    title,
+    url: rawUrl,
+    company: bounded(job.company, 300),
+    location: bounded(job.location, 500),
+  };
+  const description = bounded(job.description, 20_000);
+  const note = bounded(job.note, 2_000);
+  if (description) out.description = description;
+  if (note) out.note = note;
+  if (Number.isFinite(job.postedAt)) out.postedAt = job.postedAt;
+  if (job.salary && typeof job.salary === 'object' && !Array.isArray(job.salary)) {
+    const min = Number(job.salary.min);
+    const max = Number(job.salary.max);
+    const currency = bounded(job.salary.currency, 3).toUpperCase();
+    if ((Number.isFinite(min) || Number.isFinite(max)) && /^[A-Z]{3}$/.test(currency)) {
+      out.salary = {
+        ...(Number.isFinite(min) ? { min } : {}),
+        ...(Number.isFinite(max) ? { max } : {}),
+        currency,
+        ...(bounded(job.salary.period, 20) ? { period: bounded(job.salary.period, 20) } : {}),
+      };
+    }
+  }
+  return out;
+}
+
+export function dedupeCrossSourceOffers(offers, threshold = 0.84) {
+  const kept = [];
+  const clusterSources = [];
+  let duplicates = 0;
+  const richness = (offer) =>
+    (offer?.salary ? 10 : 0) +
+    (offer?.note ? 3 : 0) +
+    (offer?.location ? 2 : 0) +
+    (offer?.postedAt ? 1 : 0) +
+    Math.min(String(offer?.description || '').length, 20_000) / 20_000;
+
+  for (const offer of Array.isArray(offers) ? offers : []) {
+    const fingerprint = offer?.fingerprint || fingerprintText(offer?.description);
+    const key = companyRoleDedupKey(offer?.company, offer?.title);
+    const index = fingerprint && offer?.source ? kept.findIndex((existing, existingIndex) => {
+      if (!existing?.source || clusterSources[existingIndex].has(offer.source)) return false;
+      if (companyRoleDedupKey(existing.company, existing.title) !== key) return false;
+      const existingFingerprint = existing.fingerprint || fingerprintText(existing.description);
+      return similarity(existingFingerprint, fingerprint) >= threshold;
+    }) : -1;
+    if (index === -1) {
+      kept.push(offer);
+      clusterSources.push(new Set(offer?.source ? [offer.source] : []));
+      continue;
+    }
+    duplicates++;
+    clusterSources[index].add(offer.source);
+    if (richness(offer) > richness(kept[index])) kept[index] = offer;
+  }
+  return { offers: kept, duplicates };
+}
+
 /**
  * Build the seen-role set from the same three sources as `loadSeenUrls`.
  *
@@ -1912,6 +2019,9 @@ function guardStatusFor(code) {
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
+  const jsonOutput = args.includes('--json');
+  const stdoutLog = console.log;
+  if (jsonOutput) console.log = (...values) => console.error(...values);
   const verify = args.includes('--verify');
   // Opt-in: on an anti-bot challenge (e.g. pracuj.pl Cloudflare wall), retry the
   // URL in a headed browser. Off by default — headed Chromium needs a display, so
@@ -1996,6 +2106,7 @@ async function main() {
   const salaryFilter = buildSalaryFilter(config.salary_filter);
   const trustValidator = buildTrustValidator(config.trust_filter);
   const contentFilter = buildContentFilter(config.content_filter);
+  const requiredExperienceFilter = buildRequiredExperienceFilter(config.max_required_experience_years);
   const candidateCountry = loadCandidateCountry();
   const countryEligibilityFilter = buildCountryEligibilityFilter(config.country_eligibility_filter, candidateCountry);
   const visaFilter = buildVisaFilter(config.visa_filter);
@@ -2069,6 +2180,7 @@ async function main() {
   const seenUrls = seenUrlState.seen;
   const canonicalizeCompany = buildCompanyCanonicalizer(config.company_aliases);
   const seenCompanyRoles = loadSeenCompanyRoles(APPLICATIONS_PATH, canonicalizeCompany, { policy: historyPolicy });
+  const dedupCompanyRole = companyRoleDedupEnabled(config);
 
   // 5. Fetch from each target
   const date = new Date().toISOString().slice(0, 10);
@@ -2084,6 +2196,7 @@ async function main() {
   let totalFilteredPostedDate = 0;
   let totalFilteredSalary = 0;
   let totalFilteredContent = 0;
+  let totalFilteredExperience = 0;
   let totalFilteredCountryEligibility = 0;
   let totalFilteredBlacklist = 0;
   let annotatedBlacklisted = 0;
@@ -2097,6 +2210,7 @@ async function main() {
     let provider = company._provider;
     const ctx = makeHttpCtx();
     let sourceName = provider.id === 'local-parser' ? 'local-parser' : `${provider.id}-api`;
+    const combinedContentFilter = buildCombinedContentFilter(config.content_filter, company.content_filter, config.title_filter);
     try {
       let jobs;
       try {
@@ -2117,6 +2231,10 @@ async function main() {
         throw new Error(`${provider.id}: fetch() did not return an array`);
       }
       totalFound += jobs.length;
+      if (jobs.length > 5_000) {
+        console.error(`  ⚠ ${company.name}: provider returned ${jobs.length} records; processing first 5000`);
+      }
+      jobs = jobs.slice(0, 5_000).map(sanitizeProviderJob).filter(Boolean);
       if (!company._isBoard && jobs.length === 0) {
         emptyTargets.push(company.name);
       }
@@ -2174,8 +2292,12 @@ async function main() {
           totalFilteredSalary++;
           continue;
         }
-        if (!contentFilter(job.description, matchedTitleKeywords(job.title, config.title_filter))) {
+        if (!combinedContentFilter(job)) {
           totalFilteredContent++;
+          continue;
+        }
+        if (!requiredExperienceFilter(job.description)) {
+          totalFilteredExperience++;
           continue;
         }
         if (!countryEligibilityFilter(job.description)) {
@@ -2192,7 +2314,7 @@ async function main() {
           continue;
         }
         const key = companyRoleDedupKey(job.company, job.title, canonicalizeCompany);
-        if (seenCompanyRoles.has(key)) {
+        if (dedupCompanyRole && seenCompanyRoles.has(key)) {
           totalDupes++;
           continue;
         }
@@ -2207,7 +2329,7 @@ async function main() {
         }
         // Mark as seen to avoid intra-scan dupes
         seenUrls.add(dedupUrl);
-        seenCompanyRoles.add(key);
+        if (dedupCompanyRole) seenCompanyRoles.add(key);
         // Tag with the company's careers domain so verify can offer a 404/410
         // rediscovery fallback. A null domain (no careers_url) marks the offer
         // as broad-discovery — ineligible for the fallback, per the issue scope.
@@ -2257,6 +2379,11 @@ async function main() {
   // Fingerprints are computed once here and reused by appendToScanHistory.
   for (const offer of verifiedOffers) {
     offer.fingerprint = fingerprintText(offer.description);
+  }
+  if (config.dedup_cross_source === true) {
+    const crossSourceDedup = dedupeCrossSourceOffers(verifiedOffers);
+    verifiedOffers = crossSourceDedup.offers;
+    totalDupes += crossSourceDedup.duplicates;
   }
   const crossListings = findCrossListings(verifiedOffers, loadFingerprintHistory());
 
@@ -2336,6 +2463,9 @@ async function main() {
   }
   if (config.content_filter || totalFilteredContent > 0) {
     console.log(`Filtered by content:   ${totalFilteredContent} removed`);
+  }
+  if (config.max_required_experience_years != null || totalFilteredExperience > 0) {
+    console.log(`Filtered by experience: ${totalFilteredExperience} removed`);
   }
   if (config.country_eligibility_filter || totalFilteredCountryEligibility > 0) {
     console.log(`Filtered by country eligibility: ${totalFilteredCountryEligibility} removed`);
@@ -2532,6 +2662,35 @@ async function main() {
       : 'career-ops.org/manifesto?utm_source=cli';
     console.log(`\nthe practice behind this tool has a name and a manifesto: ${link}`);
     try { writeFileSync('.manifesto-noted', new Date().toISOString() + '\n'); } catch { /* best-effort */ }
+  }
+
+  if (jsonOutput) {
+    console.log = stdoutLog;
+    process.stdout.write(JSON.stringify({
+      date,
+      dryRun,
+      counts: {
+        companies: summaryCompanies,
+        boards: summaryBoards,
+        found: totalFound,
+        filteredTitle: totalFilteredTitle,
+        filteredTier: totalFilteredTier,
+        filteredLocation: totalFilteredLocation,
+        filteredPostingAge: totalFilteredPostingAge,
+        filteredSalary: totalFilteredSalary,
+        filteredContent: totalFilteredContent,
+        filteredExperience: totalFilteredExperience,
+        filteredCountryEligibility: totalFilteredCountryEligibility,
+        filteredVisa: totalFilteredVisa,
+        filteredCooldown: totalFilteredCooldown,
+        duplicates: totalDupes,
+        newAdded: verifiedOffers.length,
+        errors: errors.length,
+      },
+      offers: verifiedOffers,
+      errors,
+      agentHandoff,
+    }) + '\n');
   }
 }
 

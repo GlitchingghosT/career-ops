@@ -1,5 +1,6 @@
 // @ts-check
 /** @typedef {import('./_types.js').Provider} Provider */
+import { plainTextFromHtml, boundedStringList } from './_job-text.mjs';
 
 // Remotive provider — board-wide aggregator feed
 // (https://remotive.com/api/remote-jobs). Returns { jobs: [...] }. The full
@@ -23,7 +24,7 @@ export default {
    */
   async fetch(entry, ctx) {
     // redirect:'error' prevents SSRF via server-side redirects
-    const json = await ctx.fetchJson(FEED_URL, { redirect: 'error' });
+    const json = await ctx.fetchJson(FEED_URL, { redirect: 'error', maxBytes: 10_000_000 });
     if (!json || !Array.isArray(json.jobs)) {
       throw new Error(`remotive: unexpected API response — expected { jobs: [...] }, got keys: [${json ? Object.keys(json).join(', ') : 'null'}]`);
     }
@@ -32,11 +33,24 @@ export default {
       .filter(j => j && typeof j === 'object'
         && typeof j.title === 'string' && j.title.trim() !== ''
         && typeof j.url === 'string' && /^https?:\/\//i.test(j.url.trim()))
-      .map(j => ({
-        title: j.title.trim(),
-        url: j.url.trim(),
-        company: typeof j.company_name === 'string' && j.company_name.trim() ? j.company_name.trim() : (entry.name || 'Remotive'),
-        location: typeof j.candidate_required_location === 'string' ? j.candidate_required_location.trim() : '',
-      }));
+      .map(j => {
+        const job = {
+          title: j.title.trim(),
+          url: j.url.trim(),
+          company: typeof j.company_name === 'string' && j.company_name.trim() ? j.company_name.trim() : (entry.name || 'Remotive'),
+          location: typeof j.candidate_required_location === 'string' ? j.candidate_required_location.trim() : '',
+        };
+        const description = plainTextFromHtml(j.description);
+        if (description) job.description = description;
+        const postedAt = Date.parse(j.publication_date);
+        if (!Number.isNaN(postedAt)) job.postedAt = postedAt;
+        const details = [];
+        if (typeof j.job_type === 'string' && j.job_type.trim()) details.push(`type: ${j.job_type.trim().replace(/[_-]+/g, ' ').slice(0, 60)}`);
+        if (typeof j.salary === 'string' && j.salary.trim()) details.push(`salary: ${j.salary.trim().slice(0, 150)}`);
+        const skills = boundedStringList(j.tags, 15, 60);
+        if (skills.length) details.push(`skills: ${skills.join(', ')}`);
+        if (details.length) job.note = details.join('; ').slice(0, 500);
+        return job;
+      });
   },
 };

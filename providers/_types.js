@@ -35,6 +35,10 @@
  *                                   'invalid_url', 'suspicious_domain').
  * @property {'high'|'medium'|'low'} [trustLevel] Classification derived from
  *                                                 trustScore.
+ * @property {{min:number,max:number,currency:string}} [salary] Validated annual
+ *                               salary range when the source supplies one.
+ * @property {string} [note] Bounded structured metadata such as skills,
+ *                           seniority, employment type, remote scope, or expiry.
  */
 
 /**
@@ -68,6 +72,9 @@
  * @property {string}             [language]       Two-letter response/search language where supported.
  * @property {string}             [date_posted]    Posting-age window where supported.
  * @property {boolean}            [remote_jobs_only] Limit to remote jobs where supported.
+ * @property {{require_description?:boolean,positive?:string[],negative?:string[],by_title_keyword?:Object<string,object>}} [content_filter]
+ *                                      Optional source-specific filter layered
+ *                                      with the global content_filter.
  * @property {string}             [offset_param]   avature only: pins the pagination query key and disables the
  *                                                 provider's jobOffset→offset self-heal. Rarely needed — an
  *                                                 escape hatch for a tenant the auto-switch can't resolve.

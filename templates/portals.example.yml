@@ -30,6 +30,19 @@
 #
 # scan_history:
 #   recheck_after_days: 30
+#
+# Company+role dedup is enabled by default to collapse city variants. High-recall
+# searches can preserve distinct requisitions with the same company/title while
+# retaining exact-URL dedup:
+# dedup_company_role: false
+# Collapse same-company/title listings mirrored by different aggregators only
+# when descriptions are highly similar. Disabled by default.
+# dedup_cross_source: true
+#
+# Reject descriptions whose explicit minimum professional/commercial experience
+# exceeds this ceiling. Ranges use their lower bound ("0-3 years" -> 0), while
+# unrelated phrases such as "5+ years of curiosity" are ignored.
+# max_required_experience_years: 2
 
 # -- Interamt.de searches (optional, German public sector) --
 # Read by scan-interamt.mjs (`npm run scan:interamt`), a separate Playwright
@@ -206,7 +219,7 @@
 # companies post generic titles ("Software Engineer") with very different
 # stacks. Case-insensitive substring match.
 # Semantics:
-#   - A job with no description always passes (see provider support below)
+#   - A job with no description passes unless `require_description: true`
 #   - Any `negative` keyword present → reject
 #   - `positive` empty → pass (after clearing negatives)
 #   - `positive` non-empty → at least one keyword must be present
@@ -214,11 +227,13 @@
 #
 # Provider support: the scanner is zero-token and only reads descriptions that
 # a provider already returns in its list payload — it never fetches each job
-# page. Currently Lever (`descriptionPlain`) supplies descriptions; jobs from
-# providers that don't always pass this filter (they're never silently dropped).
+# page. Lever, RemoteOK, Himalayas, WWR, Jobicy, EchoJobs, Arbeitnow, Get on
+# Board, Hacker News, and several ATS providers supply descriptions or bounded
+# structured detail. Providers without descriptions pass unless strict mode is set.
 #
 # Example: keep roles that mention Rust/Go, drop legacy PHP/WordPress shops
 # content_filter:
+#   require_description: true  # fail closed when this source must prove stack fit
 #   positive:
 #     - "rust"
 #     - "golang"
@@ -1850,6 +1865,9 @@ tracked_companies:
 # Multi-employer aggregators. Unlike tracked_companies (one entry = one employer),
 # job boards return offers from many companies in a single API call.
 # Same title/location filtering and dedup apply.
+# A board may also define its own `content_filter`; it is ANDed with the global
+# content_filter. This is useful for a Web3 board that should surface only roles
+# mentioning the candidate's verified React/TypeScript/Node stack.
 
 job_boards:
 

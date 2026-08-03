@@ -34,6 +34,11 @@ try {
       location: 'Worldwide',
       url: 'https://remoteok.com/remote-jobs/acme-staff-ai-engineer',
       date: '2026-07-01T00:00:00+00:00',
+      epoch: 1782864000,
+      description: '<p>Build <strong>React</strong> products with Node.js.</p>',
+      tags: ['react', 'node.js'],
+      salary_min: 60000,
+      salary_max: 90000,
     },
     {
       position: '  Platform Engineer  ',                                 // whitespace → trimmed
@@ -67,10 +72,13 @@ try {
     pass('remoteok.fetch() keeps 2 valid jobs (drops metadata row, null, non-object, empty-position, bad-url rows)');
   else fail(`remoteok.fetch() returned ${fetched.length} jobs (expected 2): ${JSON.stringify(fetched)}`);
 
-  // Normalized shape: exactly { title, url, company, location }.
-  if (fetched[0] && Object.keys(fetched[0]).sort().join(',') === 'company,location,title,url')
-    pass('remoteok.fetch() returns the normalized { title, url, company, location } shape');
-  else fail(`remoteok.fetch() row 0 keys = ${JSON.stringify(fetched[0] && Object.keys(fetched[0]))}`);
+  if (fetched[0]?.description === 'Build React products with Node.js.'
+      && fetched[0]?.postedAt === 1782864000 * 1000
+      && fetched[0]?.salary?.min === 60000 && fetched[0]?.salary?.max === 90000
+      && fetched[0]?.salary?.currency === 'USD'
+      && fetched[0]?.note === 'skills: react, node.js')
+    pass('remoteok.fetch() preserves description, date, salary, and skills');
+  else fail(`remoteok.fetch() detail mapping = ${JSON.stringify(fetched[0])}`);
 
   if (fetched[0]?.title === 'Staff AI Engineer'
       && fetched[0]?.url === 'https://remoteok.com/remote-jobs/acme-staff-ai-engineer'

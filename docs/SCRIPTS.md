@@ -502,6 +502,7 @@ When the ATS provider's list API returns a description, each new offer is finger
 
 ```bash
 npm run scan
+node scan.mjs --dry-run --json       # one JSON object on stdout; diagnostics on stderr
 node scan.mjs --include-blacklisted   # audit: let blacklisted companies through, annotated
 ```
 
