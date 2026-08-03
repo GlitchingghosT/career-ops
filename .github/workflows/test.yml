@@ -1,8 +1,14 @@
 name: Tests
 
 on:
+  workflow_dispatch:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
+
+permissions:
+  contents: read
 
 # A force-push supersedes the running matrix; cancel it instead of letting
 # stale legs occupy runners (3 jobs per push at this repo's PR volume).
