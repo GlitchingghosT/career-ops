@@ -67,7 +67,7 @@ Read the entire page/form to scan for knock-out questions BEFORE generating full
    - **Work authorization/Visa sponsorship** (e.g., "Will you now or in the future require visa sponsorship to work in the United States?")
    - **Salary floors/expectations** (e.g., "What is your target salary / expectation?")
 2. Check these questions against the candidate's `config/profile.yml` or `cv.md` parameters.
-   - Read `work_authorization.status` first. When it is `unknown`, any work-authorization or sponsorship answer is **confirmation required**: never auto-answer, never infer from location, and never convert an empty/missing field to “no sponsorship needed.”
+   - Read `work_authorization.status` and `work_authorization.needs_sponsorship` first. When either value is **unknown or missing**, any work-authorization or sponsorship answer is **confirmation required**: never auto-answer, never infer from location, and never convert an empty/missing field to “no sponsorship needed.”
 3. If a knock-out question is detected where the candidate's profile represents a potential mismatch (e.g., candidate needs sponsorship and the form automatically filters out sponsorship-needy applicants, or candidate's salary expectations mismatch the visible JD/form floors):
    - Highlight the specific knock-out question to the candidate immediately.
    - Present a clear warning block:

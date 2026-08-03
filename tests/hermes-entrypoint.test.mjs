@@ -1,34 +1,39 @@
 #!/usr/bin/env node
 
-import { mkdtempSync, readFileSync, rmSync, chmodSync, writeFileSync, existsSync, statSync } from 'node:fs';
-import { delimiter, join } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync, existsSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { pass, fail, ROOT } from './helpers.mjs';
 
 console.log('\nHermes entry point');
 
 const launcher = join(ROOT, 'bin', 'career-ops-hermes');
+const nodeLauncher = join(ROOT, 'bin', 'career-ops-hermes.mjs');
 const packageJson = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 const agents = readFileSync(join(ROOT, 'AGENTS.md'), 'utf8');
+const { launchHermes } = await import(pathToFileURL(nodeLauncher).href);
 
-if (packageJson.scripts?.hermes === 'bash bin/career-ops-hermes') pass('package.json exposes npm run hermes');
+if (packageJson.scripts?.hermes === 'node bin/career-ops-hermes.mjs') pass('package.json exposes a cross-platform npm run hermes');
 else fail(`package.json hermes script is ${JSON.stringify(packageJson.scripts?.hermes)}`);
 
 if (existsSync(launcher)) pass('Hermes launcher exists');
 else fail('Hermes launcher is missing');
 
-if (existsSync(launcher) && (statSync(launcher).mode & 0o111) !== 0) pass('Hermes launcher is executable');
-else fail('Hermes launcher is not executable');
+if (existsSync(nodeLauncher)) pass('cross-platform Hermes launcher exists');
+else fail('cross-platform Hermes launcher is missing');
+
+if (process.platform === 'win32' || (existsSync(launcher) && (statSync(launcher).mode & 0o111) !== 0)) pass('Unix Hermes wrapper is executable where mode bits apply');
+else fail('Unix Hermes wrapper is not executable');
 
 if (agents.includes('## Hermes Agent') && agents.includes('npm run hermes')) pass('AGENTS.md documents Hermes invocation');
 else fail('AGENTS.md is missing Hermes invocation guidance');
 
-if (existsSync(launcher)) {
+if (existsSync(nodeLauncher)) {
   const emptyPath = mkdtempSync(join(tmpdir(), 'career-ops-empty-path-'));
-  const fakePath = mkdtempSync(join(tmpdir(), 'career-ops-fake-hermes-'));
   try {
-    const missing = spawnSync('/bin/bash', [launcher], {
+    const missing = spawnSync(process.execPath, [nodeLauncher], {
       cwd: tmpdir(),
       env: { ...process.env, PATH: emptyPath },
       encoding: 'utf8',
@@ -39,23 +44,22 @@ if (existsSync(launcher)) {
       fail(`missing-Hermes result status=${missing.status} stderr=${JSON.stringify(missing.stderr)}`);
     }
 
-    const fakeHermes = join(fakePath, 'hermes');
-    writeFileSync(fakeHermes, '#!/usr/bin/env bash\nprintf "cwd=%s\\n" "$PWD"\nprintf "arg=%s\\n" "$@"\n');
-    chmodSync(fakeHermes, 0o755);
-    const forwarded = spawnSync('/bin/bash', [launcher, 'chat', '-q', 'scan Lagos'], {
-      cwd: tmpdir(),
-      env: { ...process.env, PATH: `${fakePath}${delimiter}/usr/bin${delimiter}/bin` },
-      encoding: 'utf8',
+    let captured;
+    const forwardedStatus = launchHermes(['chat', '-q', 'scan Lagos'], {
+      command: 'fake-hermes',
+      spawn: (command, args, options) => {
+        captured = { command, args, options };
+        return { status: 0 };
+      },
     });
-    if (forwarded.status === 0 && forwarded.stdout.includes(`cwd=${ROOT}`)) pass('launcher normalizes cwd to repository root');
-    else fail(`launcher cwd forwarding failed: ${JSON.stringify(forwarded.stdout)}`);
-    if (forwarded.stdout.includes('arg=chat') && forwarded.stdout.includes('arg=-q') && forwarded.stdout.includes('arg=scan Lagos')) {
+    if (forwardedStatus === 0 && captured?.options?.cwd === ROOT) pass('launcher normalizes cwd to repository root');
+    else fail(`launcher cwd forwarding failed: ${JSON.stringify(captured)}`);
+    if (captured?.command === 'fake-hermes' && JSON.stringify(captured?.args) === JSON.stringify(['chat', '-q', 'scan Lagos'])) {
       pass('launcher forwards Hermes arguments unchanged');
     } else {
-      fail(`launcher argument forwarding failed: ${JSON.stringify(forwarded.stdout)}`);
+      fail(`launcher argument forwarding failed: ${JSON.stringify(captured)}`);
     }
   } finally {
     rmSync(emptyPath, { recursive: true, force: true });
-    rmSync(fakePath, { recursive: true, force: true });
   }
 }

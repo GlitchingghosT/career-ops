@@ -5,6 +5,7 @@ import './_dns-cache.mjs'; // memoize dns.lookup process-wide (see that file)
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_USER_AGENT = 'Mozilla/5.0 (compatible; career-ops/1.3)';
+const DEFAULT_ERROR_BODY_MAX_BYTES = 64 * 1024;
 
 /**
  * Browser-like User-Agent for providers that must clear WAF/CDN bot
@@ -16,7 +17,45 @@ const DEFAULT_USER_AGENT = 'Mozilla/5.0 (compatible; career-ops/1.3)';
 export const BROWSER_LIKE_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-async function fetchWithTimeout(url, { timeoutMs = DEFAULT_TIMEOUT_MS, headers = {}, method = 'GET', body = null, redirect = 'follow' } = {}, consume) {
+async function readTextBounded(res, maxBytes) {
+  if (!Number.isFinite(maxBytes) || maxBytes <= 0) return res.text();
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    if (res.body && typeof res.body.cancel === 'function') await res.body.cancel().catch(() => {});
+    throw new Error(`HTTP response exceeds ${maxBytes} bytes`);
+  }
+  if (!res.body) {
+    const text = typeof res.text === 'function' ? await res.text() : '';
+    if (new TextEncoder().encode(text).byteLength > maxBytes) throw new Error(`HTTP response exceeds ${maxBytes} bytes`);
+    return text;
+  }
+  const reader = res.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw new Error(`HTTP response exceeds ${maxBytes} bytes`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const joined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(joined);
+}
+
+async function fetchWithTimeout(url, { timeoutMs = DEFAULT_TIMEOUT_MS, headers = {}, method = 'GET', body = null, redirect = 'follow', maxBytes = 0 } = {}, consume) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -28,7 +67,7 @@ async function fetchWithTimeout(url, { timeoutMs = DEFAULT_TIMEOUT_MS, headers =
       signal: controller.signal,
     });
     if (!res.ok) {
-      const responseText = await res.text().catch(() => '');
+      const responseText = await readTextBounded(res, maxBytes > 0 ? maxBytes : DEFAULT_ERROR_BODY_MAX_BYTES).catch(() => '');
       // WAF/CDN challenge pages (seen live: Workday 429s) carry no actionable
       // text — HTML markup or a generic interstitial message, not worth
       // parsing or displaying. The status code and its standard reason
@@ -44,18 +83,21 @@ async function fetchWithTimeout(url, { timeoutMs = DEFAULT_TIMEOUT_MS, headers =
     // headers and then stalls the body otherwise hangs the caller forever
     // (this froze full-directory sweeps silently — 20 workers all stuck on
     // stalled reads with the abort timer already cleared).
-    return await consume(res);
+    return await consume(res, maxBytes);
   } finally {
     clearTimeout(timer);
   }
 }
 
 export async function fetchJson(url, opts = {}) {
-  return fetchWithTimeout(url, opts, (res) => res.json());
+  return fetchWithTimeout(url, opts, async (res, maxBytes) => {
+    if (!maxBytes) return res.json();
+    return JSON.parse(await readTextBounded(res, maxBytes));
+  });
 }
 
 export async function fetchText(url, opts = {}) {
-  return fetchWithTimeout(url, opts, (res) => res.text());
+  return fetchWithTimeout(url, opts, (res, maxBytes) => readTextBounded(res, maxBytes));
 }
 
 export function makeHttpCtx() {

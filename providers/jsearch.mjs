@@ -9,7 +9,8 @@ const API_ORIGIN = 'https://jsearch.p.rapidapi.com';
 const SEARCH_URL = `${API_ORIGIN}/search`;
 const API_HOST = 'jsearch.p.rapidapi.com';
 
-const cleanText = (value) => (typeof value === 'string' ? value.trim() : '');
+const cleanText = (value, maxLength = Number.POSITIVE_INFINITY) =>
+  (typeof value === 'string' ? value.trim().slice(0, maxLength) : '');
 const clampInt = (value, fallback, min, max) => {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
@@ -62,15 +63,18 @@ export function annualizeSalary(amount, period) {
     ANNUAL: 1,
   };
   const multiplier = multipliers[cleanText(period).toUpperCase()];
-  return multiplier ? Math.round(value * multiplier) : null;
+  if (!multiplier) return null;
+  const annualized = value * multiplier;
+  return Number.isFinite(annualized) && annualized > 0 ? Math.round(annualized) : null;
 }
 
 function secureResultUrl(value) {
   const raw = cleanText(value);
-  if (!raw) return '';
+  if (!raw || raw.length > 2048) return '';
   try {
     const parsed = new URL(raw);
-    return parsed.protocol === 'https:' ? parsed.href : '';
+    const normalized = parsed.href;
+    return parsed.protocol === 'https:' && !parsed.username && !parsed.password && normalized.length <= 2048 ? normalized : '';
   } catch {
     return '';
   }
@@ -79,7 +83,7 @@ function secureResultUrl(value) {
 function normalizeLocation(job) {
   if (job?.job_is_remote === true) return 'Remote';
   const values = [job?.job_city, job?.job_state, job?.job_country]
-    .map(cleanText)
+    .map(value => cleanText(value, 200))
     .filter(Boolean);
   const seen = new Set();
   return values.filter(value => {
@@ -87,7 +91,7 @@ function normalizeLocation(job) {
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).join(', ');
+  }).join(', ').slice(0, 500);
 }
 
 /**
@@ -97,24 +101,25 @@ function normalizeLocation(job) {
  */
 export function parseJSearchResponse(json, defaultCompany = 'JSearch') {
   if (!json || !Array.isArray(json.data)) return [];
-  return json.data.map(job => {
+  return json.data.slice(0, 1000).map(job => {
     if (!job || typeof job !== 'object') return null;
-    const title = cleanText(job.job_title);
+    const title = cleanText(job.job_title, 300);
     const url = secureResultUrl(job.job_apply_link) || secureResultUrl(job.job_google_link);
     if (!title || !url) return null;
 
     const result = {
       title,
       url,
-      company: cleanText(job.employer_name) || defaultCompany,
+      company: cleanText(job.employer_name, 300) || cleanText(defaultCompany, 300),
       location: normalizeLocation(job),
     };
 
     const timestamp = Number(job.job_posted_at_timestamp);
     if (Number.isFinite(timestamp) && timestamp > 0) {
-      result.postedAt = timestamp < 1e12 ? Math.round(timestamp * 1000) : Math.round(timestamp);
+      const postedAt = timestamp < 1e12 ? Math.round(timestamp * 1000) : Math.round(timestamp);
+      if (postedAt <= 8.64e15) result.postedAt = postedAt;
     }
-    const description = cleanText(job.job_description);
+    const description = cleanText(job.job_description, 20000);
     if (description) result.description = description;
 
     const min = annualizeSalary(job.job_min_salary, job.job_salary_period);
@@ -151,6 +156,7 @@ export default {
     const url = buildJSearchUrl(entry);
     const json = await ctx.fetchJson(url, {
       redirect: 'error',
+      maxBytes: 2_000_000,
       headers: {
         'X-RapidAPI-Key': apiKey,
         'X-RapidAPI-Host': API_HOST,

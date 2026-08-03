@@ -659,7 +659,7 @@ search_queries:
 # Some providers are job boards / aggregators with no per-company careers
 # URL to detect, so they must be selected with an explicit `provider:`
 # field: 4dayweek, agentic-jobs, arbeitnow, arbeitsagentur, flowxtra, getonbrd, glints,
-# himalayas, ibm, jobicy, jobstreet, jsearch, justjoin, landingjobs, nofluffjobs, remoteok, remotive,
+# himalayas, ibm, jobicy, jobstreet, jsearch, justjoin, landingjobs, myjobmag, nofluffjobs, remoteok, remotive,
 # thehub, vdab, weworkremotely, workingnomads, wttj, a16z-speedrun-talent. Examples for every built-in provider are below.
 
 # ── Built-in provider examples ────────────────────────────────────
@@ -927,6 +927,10 @@ search_queries:
 #   max_pages: 3                          # 1-10; JSearch API usage is billed/quota-bound
 #   remote_jobs_only: false
 #   enabled: true                         # requires JSEARCH_API_KEY in .env
+#
+# - name: MyJobMag Nigeria                # official public summarized RSS feed
+#   provider: myjobmag
+#   enabled: true
 #
 # - name: EchoJobs                        # tech jobs aggregated from company ATS boards
 #   provider: echojobs

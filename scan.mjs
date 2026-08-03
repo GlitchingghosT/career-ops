@@ -587,7 +587,17 @@ export function buildSalaryFilter(salaryFilter, now = new Date()) {
     const base = String(rawFx.base || '').trim().toUpperCase();
     const source = String(rawFx.source || '').trim();
     const asOfText = String(rawFx.as_of || '').trim();
-    const asOf = /^\d{4}-\d{2}-\d{2}$/.test(asOfText) ? new Date(`${asOfText}T00:00:00Z`) : null;
+    const dateParts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(asOfText);
+    let asOf = null;
+    if (dateParts) {
+      const year = Number(dateParts[1]);
+      const month = Number(dateParts[2]);
+      const day = Number(dateParts[3]);
+      const candidate = new Date(Date.UTC(year, month - 1, day));
+      if (candidate.getUTCFullYear() === year && candidate.getUTCMonth() === month - 1 && candidate.getUTCDate() === day) {
+        asOf = candidate;
+      }
+    }
     const current = now instanceof Date ? now : new Date(now);
     const maxAgeDays = Number(rawFx.max_age_days ?? 30);
     const ageDays = asOf && Number.isFinite(current.getTime())
@@ -603,7 +613,7 @@ export function buildSalaryFilter(salaryFilter, now = new Date()) {
     }
     if (
       /^[A-Z]{3}$/.test(base) && source && asOf && Number.isFinite(maxAgeDays) && maxAgeDays >= 0 &&
-      ageDays >= -1 && ageDays <= maxAgeDays && Object.keys(rates).length > 0
+      ageDays >= 0 && ageDays <= maxAgeDays && Object.keys(rates).length > 0
     ) {
       rates[base] = 1;
       fx = { base, rates };

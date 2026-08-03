@@ -46,6 +46,7 @@ try {
     [50, 'DAY', 13000],
     [15000, 'YEAR', 15000],
     [10, 'UNKNOWN', null],
+    [1e308, 'HOUR', null],
   ];
   for (const [amount, period, expected] of salaryCases) {
     const actual = annualizeSalary(amount, period);
@@ -77,6 +78,8 @@ try {
     },
     { job_title: '', job_apply_link: 'https://example.com/blank' },
     { job_title: 'Unsafe', job_apply_link: 'http://example.com/job' },
+    { job_title: 'Credential URL', job_apply_link: 'https://user:pass@example.com/job' },
+    { job_title: 'Oversized URL', job_apply_link: `https://example.com/${'x'.repeat(3000)}` },
   ] }, 'JSearch');
 
   if (jobs.length === 2) pass('parseJSearchResponse drops blank-title and non-HTTPS records');
@@ -89,6 +92,36 @@ try {
   else fail(`salary normalization mismatch: ${JSON.stringify(jobs[0]?.salary)}`);
   if (jobs[1]?.location === 'Remote' && jobs[1]?.company === 'JSearch') pass('parseJSearchResponse handles remote jobs and fallback company');
   else fail(`remote job normalization mismatch: ${JSON.stringify(jobs[1])}`);
+
+  const invalidTimestamp = parseJSearchResponse({ data: [{
+    job_title: 'Developer', employer_name: 'Acme', job_apply_link: 'https://example.com/job', job_posted_at_timestamp: 1e20,
+  }] });
+  if (invalidTimestamp.length === 1 && invalidTimestamp[0].postedAt === undefined) pass('parseJSearchResponse omits timestamps outside the JavaScript Date range');
+  else fail(`invalid timestamp survived: ${JSON.stringify(invalidTimestamp)}`);
+
+  const oversizedRecords = Array.from({ length: 1001 }, (_, i) => ({
+    job_title: `Developer ${i}`, employer_name: 'Acme', job_apply_link: `https://example.com/jobs/${i}`,
+  }));
+  if (parseJSearchResponse({ data: oversizedRecords }).length === 1000) pass('parseJSearchResponse caps records at 1000');
+  else fail('parseJSearchResponse did not cap record count');
+
+  if (parseJSearchResponse({ data: [{ job_title: 'Developer', job_apply_link: `https://example.com/${'x'.repeat(3000)}` }] }).length === 0) pass('parseJSearchResponse rejects oversized result URLs');
+  else fail('parseJSearchResponse retained an oversized result URL');
+
+  const expandingUrl = `https://example.com/${'\u{1F600}'.repeat(450)}`;
+  if (expandingUrl.length < 2048 && parseJSearchResponse({ data: [{ job_title: 'Developer', job_apply_link: expandingUrl }] }).length === 0) pass('parseJSearchResponse rejects URLs that exceed the cap after percent-encoding');
+  else fail('parseJSearchResponse retained an expanded normalized URL');
+
+  const oversizedStrings = parseJSearchResponse({ data: [{
+    job_title: `Developer ${'x'.repeat(1000)}`,
+    employer_name: 'A'.repeat(1000),
+    job_city: 'L'.repeat(1000),
+    job_country: 'Nigeria',
+    job_apply_link: 'https://example.com/oversized',
+    job_description: 'D'.repeat(50000),
+  }] });
+  if (oversizedStrings[0]?.title.length <= 300 && oversizedStrings[0]?.company.length <= 300 && oversizedStrings[0]?.location.length <= 500 && oversizedStrings[0]?.description.length <= 20000) pass('parseJSearchResponse bounds retained strings');
+  else fail(`JSearch strings were not bounded: ${JSON.stringify({ title: oversizedStrings[0]?.title.length, company: oversizedStrings[0]?.company.length, location: oversizedStrings[0]?.location.length, description: oversizedStrings[0]?.description.length })}`);
 
   const originalKey = process.env.JSEARCH_API_KEY;
   delete process.env.JSEARCH_API_KEY;
@@ -134,7 +167,7 @@ try {
     );
     if (Array.isArray(fetched) && captured?.options?.headers?.['X-RapidAPI-Key'] === secret && captured?.options?.headers?.['X-RapidAPI-Host'] === 'jsearch.p.rapidapi.com') pass('jsearch.fetch() sends credentials only in request headers');
     else fail(`jsearch.fetch() headers mismatch: ${JSON.stringify(captured)}`);
-    if (captured?.options?.redirect === 'error' && !captured.url.includes(secret)) pass('jsearch.fetch() rejects redirects and keeps the key out of URLs');
+    if (captured?.options?.redirect === 'error' && captured?.options?.maxBytes === 2000000 && !captured.url.includes(secret)) pass('jsearch.fetch() rejects redirects, caps response bytes, and keeps the key out of URLs');
     else fail('jsearch.fetch() redirect/key handling is unsafe');
   } finally {
     delete process.env.JSEARCH_API_KEY;

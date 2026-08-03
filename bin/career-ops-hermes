@@ -2,12 +2,4 @@
 set -euo pipefail
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT_DIR"
-
-if ! command -v hermes >/dev/null 2>&1; then
-  printf 'career-ops: Hermes Agent is not installed or not on PATH.\n' >&2
-  printf 'Install or configure Hermes, then rerun npm run hermes.\n' >&2
-  exit 127
-fi
-
-exec hermes "$@"
+exec node "$ROOT_DIR/bin/career-ops-hermes.mjs" "$@"

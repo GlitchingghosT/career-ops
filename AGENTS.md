@@ -59,7 +59,7 @@ node update-system.mjs check
 If `{"status": "update-available", "local": ..., "remote": ..., "changelog": ...}` → tell the user:
 > "career-ops update available (v{local} → v{remote}). Your data (CV, profile, tracker, reports) will NOT be touched. Want me to update?"
 
-If yes → `node update-system.mjs apply`. If no → `node update-system.mjs dismiss`. Every other status (`up-to-date`, `dismissed`, `offline`, `no-remote-version`) → say nothing. The user can force a check anytime ("check for updates" / "update career-ops"); rollback: `node update-system.mjs rollback`.
+If this repository contains `FORK_MAINTENANCE.md`, never run `node update-system.mjs apply`; it intentionally fails closed because overlay updates can erase fork-specific behavior. If the user approves an upstream update, use `git fetch upstream`, review the diff, merge `upstream/main`, resolve conflicts without discarding fork features, and run the full verification suite before pushing. Otherwise, for an unmodified upstream checkout: yes → `node update-system.mjs apply`; no → `node update-system.mjs dismiss`. Every other status (`up-to-date`, `dismissed`, `offline`, `no-remote-version`) → say nothing.
 
 ## What is career-ops
 

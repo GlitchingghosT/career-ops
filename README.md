@@ -207,6 +207,8 @@ See [docs/SETUP.md](docs/SETUP.md) for the full setup guide, [docs/RUNNING_ON_A_
 
 This fork includes a tested Hermes launcher while preserving `santifer/career-ops` as the canonical upstream update source.
 
+Because this is a maintained fork, upstream updates are merged through Git rather than applied by the overlay updater. See [FORK_MAINTENANCE.md](FORK_MAINTENANCE.md).
+
 ```bash
 # Interactive session from the repository root
 npm run hermes

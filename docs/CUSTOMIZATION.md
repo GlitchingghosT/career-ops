@@ -9,7 +9,7 @@ Key sections:
 - **target_roles**: Your North Star roles and archetypes
 - **narrative**: Your headline, exit story, superpowers, proof points
 - **compensation**: Target range, minimum, currency
-- **location**: Country, timezone, visa status, on-site availability, and structured work authorization (`authorized_in`, `needs_sponsorship`) that drives the Work-Auth signal in job evaluation (flags an explicit no-sponsorship JD as a hard blocker)
+- **location**: Country, timezone, visa status, on-site availability, and structured work authorization (`work_authorization.status`, `work_authorization.needs_sponsorship`, plus legacy `authorized_in`). Unknown or missing values require candidate confirmation; an explicit no-sponsorship posting becomes a hard blocker only after the candidate's status is confirmed.
 - **culture_screen**: Structural criteria for team culture (the `deprioritize_if_absent` strict flag caps the culture score at 2/5 if evidence is entirely missing)
 
 ## Target Roles (modes/_profile.md)

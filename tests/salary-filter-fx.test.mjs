@@ -43,6 +43,14 @@ try {
   if (stalePass({ min: 20000000, max: 25000000, currency: 'NGN' }) === true) pass('stale FX rates pass for manual review when configured');
   else fail('stale FX rate was used to reject a job');
 
+  const impossibleDatePass = buildSalaryFilter({ ...config, exchange_rates: { ...config.exchange_rates, as_of: '2026-02-30' } }, new Date('2026-03-03T12:00:00Z'));
+  if (impossibleDatePass({ min: 15000000, max: 15300000, currency: 'NGN' }) === true) pass('impossible FX calendar dates are ignored');
+  else fail('an impossible FX calendar date was normalized and used');
+
+  const futureDatePass = buildSalaryFilter({ ...config, exchange_rates: { ...config.exchange_rates, as_of: '2026-08-04' } }, now);
+  if (futureDatePass({ min: 15000000, max: 15300000, currency: 'NGN' }) === true) pass('future-dated FX tables are ignored');
+  else fail('a future-dated FX table was used');
+
   const legacyReject = buildSalaryFilter({ min: 10400, max: 0, currency: 'USD' }, now);
   if (legacyReject({ min: 20000000, max: 25000000, currency: 'NGN' }) === false) pass('legacy config still rejects known currency mismatches');
   else fail('legacy currency-mismatch behavior changed');

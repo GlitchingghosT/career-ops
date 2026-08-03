@@ -2,11 +2,13 @@
 import { pass, fail, ROOT } from './helpers.mjs';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
+import { mkdtempSync, writeFileSync, symlinkSync, rmSync, mkdirSync } from 'fs';
+import { tmpdir } from 'os';
 
 console.log('\nPortfolio evidence synchronizer');
 
 try {
-  const { parsePortfolioCatalog, renderArticleDigest } = await import(pathToFileURL(join(ROOT, 'sync-portfolio.mjs')).href);
+  const { parsePortfolioCatalog, renderArticleDigest, readPortfolioCatalogFile, sameFileIdentity } = await import(pathToFileURL(join(ROOT, 'sync-portfolio.mjs')).href);
   const sample = {
     projects: [
       {
@@ -79,6 +81,45 @@ try {
     try { parsePortfolioCatalog(input); } catch { rejected = true; }
     if (rejected) pass(`catalog parser rejects ${label}`);
     else fail(`catalog parser accepted ${label}`);
+  }
+
+  const sandbox = mkdtempSync(join(tmpdir(), 'career-ops-portfolio-input-'));
+  try {
+    const regular = join(sandbox, 'projects.json');
+    writeFileSync(regular, JSON.stringify(sample));
+    if (readPortfolioCatalogFile(regular).includes('weather-app')) pass('portfolio reader accepts a bounded regular file');
+    else fail('portfolio reader did not return regular-file content');
+
+    const oversized = join(sandbox, 'oversized.json');
+    writeFileSync(oversized, 'x'.repeat(2 * 1024 * 1024 + 1));
+    let oversizedRejected = false;
+    try { readPortfolioCatalogFile(oversized); } catch (error) { oversizedRejected = /exceeds/.test(String(error?.message)); }
+    if (oversizedRejected) pass('portfolio reader rejects files above 2 MiB');
+    else fail('portfolio reader accepted an oversized file');
+
+    const directory = join(sandbox, 'directory');
+    mkdirSync(directory);
+    let directoryRejected = false;
+    try { readPortfolioCatalogFile(directory); } catch (error) { directoryRejected = /regular file/.test(String(error?.message)); }
+    if (directoryRejected) pass('portfolio reader rejects directories and non-regular inputs');
+    else fail('portfolio reader accepted a directory');
+
+    try {
+      const symlink = join(sandbox, 'projects-link.json');
+      symlinkSync(regular, symlink);
+      let symlinkRejected = false;
+      try { readPortfolioCatalogFile(symlink); } catch (error) { symlinkRejected = /symbolic links/.test(String(error?.message)); }
+      if (symlinkRejected) pass('portfolio reader rejects symbolic links');
+      else fail('portfolio reader accepted a symbolic link');
+    } catch (error) {
+      if (process.platform === 'win32' && (error?.code === 'EPERM' || error?.code === 'EACCES')) pass('portfolio symlink creation unavailable on this Windows runner');
+      else throw error;
+    }
+
+    if (sameFileIdentity({ dev: 1, ino: 2 }, { dev: 1, ino: 2 }) && !sameFileIdentity({ dev: 1, ino: 2 }, { dev: 1, ino: 3 })) pass('portfolio reader detects path replacement by device/inode identity');
+    else fail('portfolio reader identity comparison is unsafe');
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
   }
 } catch (error) {
   fail(`portfolio synchronizer could not be imported/tested: ${error?.stack || error}`);

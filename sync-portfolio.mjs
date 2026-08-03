@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync, statSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, unlinkSync, lstatSync, openSync, fstatSync, readSync, closeSync, constants } from 'node:fs';
 import { isIP } from 'node:net';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,50 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const OUTPUT_PATH = resolve(ROOT, 'article-digest.md');
 const MAX_INPUT_BYTES = 2 * 1024 * 1024;
+
+export function sameFileIdentity(before, opened) {
+  if (!before || !opened) return false;
+  const comparable = ['dev', 'ino'].every(key =>
+    (typeof before[key] === 'number' || typeof before[key] === 'bigint') &&
+    (typeof opened[key] === 'number' || typeof opened[key] === 'bigint'));
+  return !comparable || (before.dev === opened.dev && before.ino === opened.ino);
+}
+
+// Open once, compare the descriptor identity with the lstat result, and read
+// no more than MAX_INPUT_BYTES + 1. O_NOFOLLOW closes the final-component
+// symlink race where the platform supports it; dev/ino comparison also detects
+// parent/path replacement that resolves to a different regular file.
+export function readPortfolioCatalogFile(inputPath) {
+  const initial = lstatSync(inputPath);
+  if (initial.isSymbolicLink()) throw new Error('portfolio: symbolic links are not allowed as catalog inputs');
+  if (!initial.isFile()) throw new Error('portfolio: catalog input must be a regular file');
+
+  let fd;
+  try {
+    fd = openSync(inputPath, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+  } catch (error) {
+    if (error?.code === 'ELOOP') throw new Error('portfolio: symbolic links are not allowed as catalog inputs');
+    throw error;
+  }
+  try {
+    const opened = fstatSync(fd);
+    if (!sameFileIdentity(initial, opened)) throw new Error('portfolio: catalog input changed while opening');
+    if (!opened.isFile()) throw new Error('portfolio: catalog input must be a regular file');
+    if (opened.size > MAX_INPUT_BYTES) throw new Error(`portfolio: input exceeds ${MAX_INPUT_BYTES} bytes`);
+
+    const buffer = Buffer.allocUnsafe(MAX_INPUT_BYTES + 1);
+    let total = 0;
+    while (total <= MAX_INPUT_BYTES) {
+      const bytesRead = readSync(fd, buffer, total, MAX_INPUT_BYTES + 1 - total, null);
+      if (bytesRead === 0) break;
+      total += bytesRead;
+    }
+    if (total > MAX_INPUT_BYTES) throw new Error(`portfolio: input exceeds ${MAX_INPUT_BYTES} bytes`);
+    return buffer.subarray(0, total).toString('utf8');
+  } finally {
+    closeSync(fd);
+  }
+}
 
 const clean = (value) => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
@@ -128,9 +172,7 @@ function main() {
     console.log('Usage: node sync-portfolio.mjs --input <projects.json> [--check]');
     return;
   }
-  const size = statSync(args.input).size;
-  if (size > MAX_INPUT_BYTES) throw new Error(`portfolio: input exceeds ${MAX_INPUT_BYTES} bytes`);
-  const catalog = JSON.parse(readFileSync(args.input, 'utf8'));
+  const catalog = JSON.parse(readPortfolioCatalogFile(args.input));
   const output = renderArticleDigest(parsePortfolioCatalog(catalog));
   if (args.check) {
     const current = (() => { try { return readFileSync(OUTPUT_PATH, 'utf8'); } catch { return ''; } })();

@@ -86,6 +86,7 @@
  *
  * @typedef {object} FetchOptions
  * @property {number}                [timeoutMs]
+ * @property {number}                [maxBytes] Maximum response body bytes before parsing.
  * @property {Object<string,string>} [headers]
  * @property {string}                [method]
  * @property {(string|null)}         [body]

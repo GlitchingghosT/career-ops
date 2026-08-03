@@ -36,6 +36,7 @@ const ROOT = __dirname;
 const CANONICAL_REPO = 'https://github.com/santifer/career-ops.git';
 const RAW_VERSION_URL = 'https://raw.githubusercontent.com/santifer/career-ops/main/VERSION';
 const RELEASES_API = 'https://api.github.com/repos/santifer/career-ops/releases/latest';
+const FORK_MAINTENANCE_FILE = 'FORK_MAINTENANCE.md';
 
 // Matches a semver, with or without a leading `v` and an optional
 // Release Please component prefix (e.g. `career-ops-v1.9.0` → `1.9.0`).
@@ -171,6 +172,8 @@ const SYSTEM_PATHS = [
   'scan.mjs',
   'sync-portfolio.mjs',
   'bin/career-ops-hermes',
+  'bin/career-ops-hermes.mjs',
+  'FORK_MAINTENANCE.md',
   'pipeline-lock.mjs',
   'portal-health-lock.mjs',
   'classify-tier.mjs',
@@ -896,6 +899,12 @@ async function check() {
 // ── APPLY ───────────────────────────────────────────────────────
 
 async function apply() {
+  if (existsSync(join(ROOT, FORK_MAINTENANCE_FILE)) && process.env.CAREER_OPS_ALLOW_OVERLAY_UPDATE !== '1') {
+    throw new Error(
+      'This is a maintained fork; the overlay updater is disabled because it can overwrite fork-specific files. ' +
+      'Update safely with: git fetch upstream && git merge upstream/main. See FORK_MAINTENANCE.md.'
+    );
+  }
   const local = localVersion();
   const initialStatusPaths = new Set(gitStatusEntries().map(entry => entry.path));
   const isReexec = process.env.CAREER_OPS_UPDATE_REEXEC === '1';
