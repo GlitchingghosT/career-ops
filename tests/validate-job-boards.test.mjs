@@ -2,11 +2,27 @@
 import { pass, fail, ROOT } from './helpers.mjs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 console.log('\nPortal validator — job boards and search queries');
 
 try {
-  const { validatePortalsConfig } = await import(pathToFileURL(join(ROOT, 'validate-portals.mjs')).href);
+  const validatorUrl = pathToFileURL(join(ROOT, 'validate-portals.mjs')).href;
+  const { validatePortalsConfig } = await import(validatorUrl);
+  const emptyCwd = mkdtempSync(join(tmpdir(), 'career-ops-validator-import-'));
+  try {
+    const stdout = execFileSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(validatorUrl)})`], {
+      cwd: emptyCwd,
+      encoding: 'utf8',
+      env: { ...process.env, CAREER_OPS_PORTALS: '' },
+    });
+    if (stdout === '') pass('importing validate-portals has no CLI side effects without portals.yml');
+    else fail(`validator import wrote stdout: ${JSON.stringify(stdout)}`);
+  } finally {
+    rmSync(emptyCwd, { recursive: true, force: true });
+  }
   const providerIds = new Set(['cryptocurrencyjobs', 'echojobs']);
   const invalid = await validatePortalsConfig({
     max_required_experience_years: 'many',
